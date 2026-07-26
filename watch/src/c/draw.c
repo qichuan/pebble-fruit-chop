@@ -542,6 +542,26 @@ void draw_half(GContext *ctx, const Half *h) {
   }
 }
 
+void draw_juice(GContext *ctx) {
+  const Juice *juice = game_juice();
+  graphics_context_set_antialiased(ctx, true);
+
+  for (int i = 0; i < MAX_JUICE; i++) {
+    const Juice *j = &juice[i];
+    if (!j->active) {
+      continue;
+    }
+    // Droplets shrink as they age, so the splash thins out instead of blinking
+    // off at full size.
+    int16_t r = (FC_JUICE_RADIUS_MAX * j->ttl) / (j->ttl0 ? j->ttl0 : 1);
+    if (r < 1) {
+      r = 1;
+    }
+    graphics_context_set_fill_color(ctx, prv_col(j->colour));
+    graphics_fill_circle(ctx, GPoint(FP_INT(j->x), FP_INT(j->y)), r);
+  }
+}
+
 void draw_hud(GContext *ctx, GRect bounds) {
   char score[8];
   snprintf(score, sizeof(score), "%d", game_get_score());
@@ -579,6 +599,17 @@ void draw_hud(GContext *ctx, GRect bounds) {
   }
 }
 
+// A small solid triangle, used for the title screen's difficulty arrows.
+static void prv_tri(GContext *ctx, GPoint c, int16_t size, bool up) {
+  const int16_t dy = up ? -size : size;
+  GPoint pts[3] = {
+    GPoint(c.x, c.y + dy),
+    GPoint(c.x - size, c.y - dy),
+    GPoint(c.x + size, c.y - dy),
+  };
+  prv_fill_points(ctx, pts, 3);
+}
+
 // Shared centred-stack layout for the title and game-over screens.
 static void prv_draw_centred(GContext *ctx, GRect bounds, const char *title,
                              const char *line2, const char *line3) {
@@ -602,19 +633,80 @@ void draw_title(GContext *ctx, GRect bounds, bool touch_ok) {
   static const FruitType preview[] = {
     FRUIT_WATERMELON, FRUIT_ORANGE, FRUIT_STRAWBERRY, FRUIT_BANANA,
   };
-  const int16_t y = bounds.size.h / 2 - 66;
-  const int16_t step = bounds.size.w / 5;
-  for (unsigned i = 0; i < ARRAY_LENGTH(preview); i++) {
-    draw_fruit(ctx, preview[i], GPoint(step * (i + 1), y), 12, 0);
-  }
+  GFont big = fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD);
+  GFont bold = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+  GFont small = fonts_get_system_font(FONT_KEY_GOTHIC_18);
 
-  prv_draw_centred(ctx, bounds, "FRUIT CHOP",
-                   touch_ok ? "Swipe to chop" : "Touch unavailable",
-                   "SELECT to start");
+  // The screen now carries five rows, so it is laid out as one stack measured
+  // from the top of the block rather than around the centre.
+  const int16_t step = bounds.size.w / 5;
+  int16_t y = bounds.size.h / 2 - PBL_IF_ROUND_ELSE(84, 90);
+
+  for (unsigned i = 0; i < ARRAY_LENGTH(preview); i++) {
+    draw_fruit(ctx, preview[i], GPoint(step * (i + 1), y + 12), 12, 0);
+  }
+  y += 30;
+
+  graphics_context_set_text_color(ctx, GColorWhite);
+  graphics_draw_text(ctx, "FRUIT CHOP", big, GRect(0, y, bounds.size.w, 34),
+                     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+  y += 36;
+
+  // Difficulty, flanked by triangles pointing the way the two buttons sit on
+  // the case: UP to the left, DOWN to the right. The arrows are drawn rather
+  // than typed because the Gothic system fonts have no arrow glyphs -- they
+  // come out as tofu boxes.
+  graphics_context_set_text_color(ctx, GColorYellow);
+  graphics_draw_text(ctx, game_difficulty_name(game_get_difficulty()), bold,
+                     GRect(0, y, bounds.size.w, 24),
+                     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+  graphics_context_set_fill_color(ctx, GColorYellow);
+  const int16_t arrow_x = 52;
+  const int16_t arrow_y = y + 13;
+  prv_tri(ctx, GPoint(bounds.size.w / 2 - arrow_x, arrow_y), 6, true);
+  prv_tri(ctx, GPoint(bounds.size.w / 2 + arrow_x, arrow_y), 6, false);
+  y += 26;
+
+  char best[24];
+  snprintf(best, sizeof(best), "Best %d", game_get_high_score());
+  graphics_context_set_text_color(ctx, GColorLightGray);
+  graphics_draw_text(ctx, best, small, GRect(0, y, bounds.size.w, 24),
+                     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+  y += 24;
+
+  graphics_context_set_text_color(ctx, GColorWhite);
+  graphics_draw_text(ctx, touch_ok ? "SELECT to start" : "Touch unavailable",
+                     small, GRect(0, y, bounds.size.w, 24),
+                     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 }
 
 void draw_gameover(GContext *ctx, GRect bounds) {
   char score[24];
   snprintf(score, sizeof(score), "Score %d", game_get_score());
-  prv_draw_centred(ctx, bounds, "GAME OVER", score, "SELECT to retry");
+
+  // Calling out a new record is the payoff for keeping one, so it takes the
+  // line that would otherwise just repeat the stored best.
+  char best[24];
+  const bool is_record = (game_get_score() >= game_get_high_score() &&
+                          game_get_score() > 0);
+  if (is_record) {
+    snprintf(best, sizeof(best), "NEW BEST!");
+  } else {
+    snprintf(best, sizeof(best), "Best %d", game_get_high_score());
+  }
+
+  // The field stays visible behind the panel so the fatal moment is legible,
+  // but at the current fruit size a watermelon fills most of the screen and the
+  // text was disappearing into it. A solid backing plate keeps both readable.
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, GRect(0, bounds.size.h / 2 - 52, bounds.size.w, 124),
+                     6, GCornersAll);
+
+  prv_draw_centred(ctx, bounds, "GAME OVER", score, best);
+
+  GFont small = fonts_get_system_font(FONT_KEY_GOTHIC_18);
+  graphics_context_set_text_color(ctx, GColorWhite);
+  graphics_draw_text(ctx, "SELECT to retry", small,
+                     GRect(0, bounds.size.h / 2 + 46, bounds.size.w, 24),
+                     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 }

@@ -5,11 +5,43 @@ static GRect s_bounds;
 
 static Fruit s_fruits[MAX_FRUITS];
 static Half s_halves[MAX_HALVES];
+static Juice s_juice[MAX_JUICE];
 
 static GameState s_state;
 static int s_score;
 static int s_lives;
 static int s_spawn_timer;
+
+// ---------------------------------------------------------------------------
+// Difficulty
+//
+// Only the spawn pressure and the bomb rate change. Physics stays identical so
+// the game feels the same in the hand at every setting -- easy gives you more
+// room to work in, hard gives you less, but a fruit never flies differently.
+// ---------------------------------------------------------------------------
+typedef struct {
+  uint8_t interval;      // frames between spawn attempts at score 0
+  uint8_t interval_min;  // floor once the score has climbed
+  uint8_t bomb_pct;
+  const char *name;
+} DifficultySpec;
+
+static const DifficultySpec s_difficulty[DIFF_COUNT] = {
+  [DIFF_EASY]   = { 44, 26, 7,  "EASY" },
+  [DIFF_NORMAL] = { FC_SPAWN_INTERVAL, FC_SPAWN_INTERVAL_MIN, FC_BOMB_CHANCE_PCT,
+                    "NORMAL" },
+  [DIFF_HARD]   = { 26, 10, 22, "HARD" },
+};
+
+static Difficulty s_difficulty_sel = DIFF_NORMAL;
+
+// Persistent storage. Key 0 remembers the chosen difficulty; the high scores
+// live one key per difficulty above it. persist_read_int returns 0 for a key
+// that was never written, which is the right default for both.
+#define PERSIST_KEY_DIFFICULTY 1
+#define PERSIST_KEY_HIGH_BASE 2
+
+static int s_high[DIFF_COUNT];
 
 // Derived from the screen height in game_init so emery and gabbro play alike.
 static int32_t s_gravity;
@@ -17,6 +49,16 @@ static int32_t s_launch_vy;
 
 void game_init(GRect bounds) {
   s_bounds = bounds;
+
+  // Stored as difficulty+1, because persist_read_int cannot distinguish a key
+  // holding 0 from one that was never written -- and an unwritten key must mean
+  // NORMAL, not EASY.
+  const int32_t saved = persist_read_int(PERSIST_KEY_DIFFICULTY) - 1;
+  s_difficulty_sel = (saved >= 0 && saved < DIFF_COUNT) ? (Difficulty)saved
+                                                        : DIFF_NORMAL;
+  for (int i = 0; i < DIFF_COUNT; i++) {
+    s_high[i] = persist_read_int(PERSIST_KEY_HIGH_BASE + i);
+  }
 
   // Solve for the gravity and launch speed that put the apex at APEX_NUM/APEX_DEN
   // of the screen height, reached in half of FC_AIRTIME_FRAMES.
@@ -36,9 +78,35 @@ void game_reset(void) {
   for (int i = 0; i < MAX_HALVES; i++) {
     s_halves[i].active = false;
   }
+  for (int i = 0; i < MAX_JUICE; i++) {
+    s_juice[i].active = false;
+  }
   s_score = 0;
   s_lives = FC_START_LIVES;
   s_spawn_timer = 0;
+}
+
+Difficulty game_get_difficulty(void) { return s_difficulty_sel; }
+const char *game_difficulty_name(Difficulty d) {
+  return s_difficulty[(d < DIFF_COUNT) ? d : DIFF_NORMAL].name;
+}
+int game_get_high_score(void) { return s_high[s_difficulty_sel]; }
+
+void game_set_difficulty(Difficulty d) {
+  if (d >= DIFF_COUNT) {
+    return;
+  }
+  s_difficulty_sel = d;
+  persist_write_int(PERSIST_KEY_DIFFICULTY, (int32_t)d + 1);
+}
+
+// Called on the transition into game over, so a run that ends by bomb records
+// its score the same as one that ends by dropping fruit.
+static void prv_record_score(void) {
+  if (s_score > s_high[s_difficulty_sel]) {
+    s_high[s_difficulty_sel] = s_score;
+    persist_write_int(PERSIST_KEY_HIGH_BASE + s_difficulty_sel, (int32_t)s_score);
+  }
 }
 
 static Fruit *prv_free_fruit(void) {
@@ -48,6 +116,52 @@ static Fruit *prv_free_fruit(void) {
     }
   }
   return NULL;
+}
+
+static Juice *prv_free_juice(void) {
+  // Unlike the fruit and half pools, juice recycles: a burst that finds the
+  // pool full steals the oldest droplet rather than being dropped. A cut that
+  // silently produced no splash would read as a bug.
+  Juice *oldest = &s_juice[0];
+  for (int i = 0; i < MAX_JUICE; i++) {
+    if (!s_juice[i].active) {
+      return &s_juice[i];
+    }
+    if (s_juice[i].ttl < oldest->ttl) {
+      oldest = &s_juice[i];
+    }
+  }
+  return oldest;
+}
+
+// Throws a burst of droplets out of the cut, perpendicular to the blade. Both
+// directions are seeded so the splash straddles the cut line the way it does
+// when something wet is actually sliced.
+static void prv_spray(const Fruit *f, int32_t cut_angle) {
+  const int32_t normal = cut_angle + (TRIG_MAX_ANGLE / 4);
+  const uint8_t colour = fruit_profile(f->type)->flesh;
+
+  for (int i = 0; i < FC_JUICE_PER_CUT; i++) {
+    Juice *j = prv_free_juice();
+
+    const int32_t speed = fc_rand_range(FC_JUICE_SPEED_MIN, FC_JUICE_SPEED_MAX);
+    // Fan the droplets around the normal instead of firing them all down one
+    // line, and send roughly half to each side.
+    const int32_t spread = (speed * fc_rand_range(-FC_JUICE_SPREAD,
+                                                  FC_JUICE_SPREAD)) / 100;
+    const int32_t dir = (i & 1) ? normal : normal + (TRIG_MAX_ANGLE / 2);
+
+    j->x = f->x;
+    j->y = f->y;
+    j->vx = ((sin_lookup(dir) * speed) + (cos_lookup(dir) * spread)) / TRIG_MAX_RATIO;
+    j->vy = ((-cos_lookup(dir) * speed) + (sin_lookup(dir) * spread)) / TRIG_MAX_RATIO;
+    j->colour = colour;
+    // Stagger the lifetimes so the splash thins out rather than vanishing in
+    // one frame.
+    j->ttl = (uint8_t)fc_rand_range(FC_JUICE_TTL / 2, FC_JUICE_TTL);
+    j->ttl0 = j->ttl;
+    j->active = true;
+  }
 }
 
 static Half *prv_free_half(void) {
@@ -65,7 +179,8 @@ static void prv_spawn(void) {
     return;
   }
 
-  const bool is_bomb = (fc_rand_range(0, 99) < FC_BOMB_CHANCE_PCT);
+  const bool is_bomb =
+      (fc_rand_range(0, 99) < s_difficulty[s_difficulty_sel].bomb_pct);
   f->type = is_bomb ? FRUIT_BOMB
                     : (FruitType)fc_rand_range(0, FRUIT_BOMB - 1);
   f->radius = is_bomb ? BOMB_RADIUS
@@ -127,10 +242,12 @@ void game_step(void) {
     return;
   }
 
-  // Spawn rate tightens as the score climbs.
-  int interval = FC_SPAWN_INTERVAL - (s_score / 5);
-  if (interval < FC_SPAWN_INTERVAL_MIN) {
-    interval = FC_SPAWN_INTERVAL_MIN;
+  // Spawn rate tightens as the score climbs, from the chosen difficulty's
+  // starting interval down to its floor.
+  const DifficultySpec *spec = &s_difficulty[s_difficulty_sel];
+  int interval = spec->interval - (s_score / 5);
+  if (interval < spec->interval_min) {
+    interval = spec->interval_min;
   }
   if (++s_spawn_timer >= interval) {
     s_spawn_timer = 0;
@@ -156,6 +273,7 @@ void game_step(void) {
       if (f->type != FRUIT_BOMB && --s_lives <= 0) {
         s_lives = 0;
         s_state = STATE_GAMEOVER;
+        prv_record_score();
       }
     }
   }
@@ -174,6 +292,21 @@ void game_step(void) {
     h->body_angle += h->spin;
     if (--h->ttl == 0 || h->y > floor_y + FP(h->radius)) {
       h->active = false;
+    }
+  }
+
+  for (int i = 0; i < MAX_JUICE; i++) {
+    Juice *j = &s_juice[i];
+    if (!j->active) {
+      continue;
+    }
+    // Droplets are light, so they arc harder than the fruit they came from and
+    // the splash collapses quickly instead of drifting.
+    j->vy += s_gravity + (s_gravity / 2);
+    j->x += j->vx;
+    j->y += j->vy;
+    if (--j->ttl == 0 || j->y > floor_y) {
+      j->active = false;
     }
   }
 }
@@ -232,6 +365,7 @@ int game_slice_segment(GPoint p0, GPoint p1) {
     if (f->type == FRUIT_BOMB) {
       f->active = false;
       s_state = STATE_GAMEOVER;
+      prv_record_score();
       return cut;
     }
 
@@ -239,6 +373,7 @@ int game_slice_segment(GPoint p0, GPoint p1) {
     // The loop deliberately does not break: one swipe cutting several fruits is
     // the whole point of the genre.
     prv_split(f, cut_angle);
+    prv_spray(f, cut_angle);
     f->active = false;
     s_score++;
     cut++;
@@ -286,3 +421,4 @@ int game_get_score(void) { return s_score; }
 int game_get_lives(void) { return s_lives; }
 const Fruit *game_fruits(void) { return s_fruits; }
 const Half *game_halves(void) { return s_halves; }
+const Juice *game_juice(void) { return s_juice; }

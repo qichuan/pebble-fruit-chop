@@ -43,9 +43,9 @@ emulator-touching command in a headless environment.
 | `fixed.h` | 8.8 fixed-point macros and the RNG helper. |
 | `fruit.c/.h` | The roster. `FruitType` plus one `FruitProfile` row per fruit: skin, flesh, silhouette, relative size. Adding a fruit is an enum member and a row. |
 | `main.c` | Window lifecycle, the AppTimer loop, state machine, buttons, touch subscription, and the debug swipe harness. |
-| `game.c/.h` | Pure simulation: entity pools, physics, spawning, slice resolution, score, lives. No `graphics_*` calls. |
+| `game.c/.h` | Pure simulation: entity pools, physics, spawning, slice resolution, score, lives, juice particles, difficulty table and persisted high scores. No `graphics_*` calls. |
 | `blade.c/.h` | Touch point buffer, speed gating, trail rendering. `blade_feed()` is the single input entry point. |
-| `draw.c/.h` | Procedural fruit/bomb rendering, HUD, title and game-over screens. |
+| `draw.c/.h` | Procedural fruit/bomb rendering, silhouette clipping for halves, juice, HUD, title and game-over screens. |
 
 The timer callback only mutates state and calls `layer_mark_dirty()`; all drawing
 happens in `prv_update_proc`. Touch events never touch game state directly — they
@@ -79,14 +79,35 @@ only append to the blade buffer, which the slice test then consumes.
   buffer — no `gpath_create`, no malloc), and `prv_draw_detail` adds the stem,
   crown, seeds or crease. The pairs closest in hue are always the ones separated
   by shape.
-- **Sliced halves are pie sectors whatever the whole fruit's shape.**
-  `graphics_fill_radial` is the only primitive whose cut edge can be aimed along
-  the blade, and that alignment matters more than the silhouette for the few
-  frames a half is on screen. Types whose insides are the recognisable part
-  (watermelon pips, citrus segments, kiwi and passion seeds, stone fruit stones)
-  get their detail drawn on the cut face instead.
+- **A sliced half is the fruit's own outline clipped against the blade,** not a
+  pie sector. `prv_clip_halfplane` in `draw.c` runs Sutherland-Hodgman on the
+  silhouette from `prv_outline`, so a cut banana leaves two banana pieces. This
+  is why `Half` carries both `angle` (where the blade went) and `body_angle`
+  (which way the fruit was facing) — clipping needs both, and both advance by
+  `spin`. The skin and the inset flesh are clipped on the *same* line, which is
+  what leaves a rind on the curved edge but bare flesh on the flat cut face.
+  Only the bomb still uses `graphics_fill_radial`, being a plain circle.
+  Types whose insides are the recognisable part (watermelon pips, citrus
+  segments, kiwi and passion seeds, stone fruit stones) draw detail on the cut
+  face; keep those radii well inside `r` so they cannot poke out of a narrow
+  silhouette like the banana's.
+- **`pebble emu-button` can permanently wedge the emulator's screenshot
+  service.** Once it happens, every later `screenshot` and `emu-button` on that
+  instance returns `libpebble2.exceptions.TimeoutError`, and it never recovers —
+  only `pebble kill` plus a reinstall does. It is environmental, not an app
+  bug: confirm by rebuilding a known-good commit and reproducing. When it
+  strikes, stop trying to drive the UI by button and instead drive the state
+  from code: temporarily force the state you want in `prv_timer_callback` (a few
+  frames after launch, call `game_set_state` and `prv_debug_start_swipe`), then
+  take a single screenshot on a fresh boot. Screenshots taken before any button
+  press are reliable.
 - **The touch sensor draws power while subscribed**, so subscribe in
   `window_appear` and unsubscribe in `window_disappear`, not load/unload.
+- **`persist_read_int` cannot tell "holds 0" from "never written",** so the
+  stored difficulty is written as `difficulty + 1`. Without that an unwritten
+  key reads as 0 and the game defaults to EASY instead of NORMAL.
+- **The Gothic system fonts have no arrow glyphs.** `▲`/`▼` render as tofu
+  boxes; the title screen's difficulty arrows are drawn with `prv_tri` instead.
 - Physics constants are derived from `layer_get_bounds()` at runtime, never
   hardcoded, so the 200x228 and 260x260 screens play identically.
 
@@ -97,6 +118,9 @@ scripted swipes so the slice pipeline can be exercised and screenshotted from th
 CLI. During play: **SELECT** cuts a watermelon, **UP** cuts a bomb (ends the run),
 **DOWN** cuts the next fruit in the roster, cycling through all sixteen so each
 can be screenshotted without a rebuild. The parked target's name is logged.
+
+UP and DOWN only do this **during play** — on the title screen they belong to
+the difficulty picker, so the harness never shadows a real control.
 
 Two things to know when scripting it. Natural spawns keep falling in the gaps
 between button presses, so a long capture run loses all three lives partway

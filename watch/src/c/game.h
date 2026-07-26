@@ -10,6 +10,13 @@ typedef enum {
   STATE_GAMEOVER,
 } GameState;
 
+typedef enum {
+  DIFF_EASY = 0,
+  DIFF_NORMAL,
+  DIFF_HARD,
+  DIFF_COUNT,
+} Difficulty;
+
 // A fruit or bomb in flight. Bombs share the pool so spawning and the physics
 // step stay a single code path.
 typedef struct {
@@ -40,6 +47,17 @@ typedef struct {
   uint8_t ttl;      // frames remaining
 } Half;
 
+// A droplet of juice thrown off a cut. It carries its own colour so game.c can
+// spawn it from the fruit's flesh without knowing anything about drawing.
+typedef struct {
+  bool active;
+  int32_t x, y;
+  int32_t vx, vy;
+  uint8_t colour;   // GColor argb byte
+  uint8_t ttl;
+  uint8_t ttl0;     // ttl at spawn, so draw can shrink the droplet as it ages
+} Juice;
+
 void game_init(GRect bounds);
 void game_reset(void);
 void game_step(void);
@@ -53,8 +71,17 @@ void game_set_state(GameState state);
 int game_get_score(void);
 int game_get_lives(void);
 
+// Difficulty is chosen on the title screen and persists across runs, as does a
+// separate high score per difficulty -- a score on easy should not sit in the
+// same column as one on hard.
+Difficulty game_get_difficulty(void);
+void game_set_difficulty(Difficulty d);
+const char *game_difficulty_name(Difficulty d);
+int game_get_high_score(void);
+
 const Fruit *game_fruits(void);
 const Half *game_halves(void);
+const Juice *game_juice(void);
 
 #if FC_DEBUG_SWIPE
 // Parks a stationary target at `at` so the scripted swipe has something

@@ -24,15 +24,16 @@
 #define MAX_FRUITS 10
 #define MAX_HALVES 12
 #define MAX_BLADE_POINTS 12
+#define MAX_JUICE 40
 
 // Base radius before the per-type size_pct in fruit.c is applied. The range is
 // deliberately narrow: the profile table now supplies the size variety (a
 // strawberry is small, a watermelon is big), so this jitter only has to stop
 // two of the same fruit looking stamped from the same die. Effective radius
-// across the roster works out at roughly 13-24px.
-#define FRUIT_RADIUS_MIN 16
-#define FRUIT_RADIUS_MAX 19
-#define BOMB_RADIUS 16
+// across the roster works out at roughly 19-36px.
+#define FRUIT_RADIUS_MIN 24
+#define FRUIT_RADIUS_MAX 29
+#define BOMB_RADIUS 24
 
 // Vertices in a fruit's silhouette template, and in the polygon left after that
 // silhouette is clipped against the blade. Clipping a convex polygon against
@@ -42,10 +43,20 @@
 #define FC_MAX_CLIP_POINTS 18
 
 // Spawning. One spawn attempt every FC_SPAWN_INTERVAL frames, shrinking toward
-// FC_SPAWN_INTERVAL_MIN as the score climbs.
+// FC_SPAWN_INTERVAL_MIN as the score climbs. The difficulty table in game.c
+// scales both ends and the bomb rate; these are the normal-difficulty values.
 #define FC_SPAWN_INTERVAL 34
 #define FC_SPAWN_INTERVAL_MIN 16
 #define FC_BOMB_CHANCE_PCT 14         // percent of spawns that are bombs
+
+// Juice. A cut throws a burst of droplets along the blade's normal, which is
+// what sells the slice as wet rather than as a fruit merely coming apart.
+#define FC_JUICE_PER_CUT 14
+#define FC_JUICE_TTL 22               // frames a droplet lives
+#define FC_JUICE_SPEED_MIN 180        // 8.8, along the cut normal
+#define FC_JUICE_SPEED_MAX 900
+#define FC_JUICE_SPREAD 40            // percent of the speed applied sideways
+#define FC_JUICE_RADIUS_MAX 6         // px at spawn, shrinking to 1 as it dies
 
 // Blade. A point older than FC_BLADE_TTL frames is dropped, so the trail decays
 // on its own even when the finger stops moving.
