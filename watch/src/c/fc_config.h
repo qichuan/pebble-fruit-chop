@@ -13,12 +13,20 @@
 // Physics. Gravity and launch speed are derived at runtime from the actual
 // layer bounds (see game_init) so emery (228 tall) and gabbro (260 tall) play
 // identically. These two constants drive that derivation.
-#define FC_AIRTIME_FRAMES 80          // ~2.6s from launch to falling off-screen
+//
+// Airtime is the single lever on how heavy the game feels: gravity goes as
+// 1/t^2, so shortening it accelerates the whole arc sharply. At 2.6s the fruit
+// hung in the air and read as floating in oil. Literal earth gravity is not the
+// target -- at watch scale a 170px toss would land in under a tenth of a second
+// -- so this is tuned to the fastest arc that is still cuttable.
+#define FC_AIRTIME_FRAMES 46          // ~1.5s from launch to falling off-screen
 #define FC_APEX_NUM 3                 // apex height = 3/4 of screen height
 #define FC_APEX_DEN 4
 
-#define FC_SPIN_MIN 200               // TRIG_MAX_ANGLE units per frame
-#define FC_SPIN_MAX 900
+// Spin is per frame, so a shorter flight means less total tumble. Raised to
+// keep roughly the same number of turns between launch and landing.
+#define FC_SPIN_MIN 400               // TRIG_MAX_ANGLE units per frame
+#define FC_SPIN_MAX 1600
 
 // Entity pools. Fixed-size, no malloc, well under the 128K app RAM budget.
 #define MAX_FRUITS 10
@@ -45,16 +53,20 @@
 // Spawning. One spawn attempt every FC_SPAWN_INTERVAL frames, shrinking toward
 // FC_SPAWN_INTERVAL_MIN as the score climbs. The difficulty table in game.c
 // scales both ends and the bomb rate; these are the normal-difficulty values.
-#define FC_SPAWN_INTERVAL 34
-#define FC_SPAWN_INTERVAL_MIN 16
+// Scaled down with FC_AIRTIME_FRAMES: fruit now clears the screen in 57% of the
+// time it used to, so the same interval would leave the field noticeably emptier.
+#define FC_SPAWN_INTERVAL 21
+#define FC_SPAWN_INTERVAL_MIN 10
 #define FC_BOMB_CHANCE_PCT 14         // percent of spawns that are bombs
 
 // Juice. A cut throws a burst of droplets along the blade's normal, which is
 // what sells the slice as wet rather than as a fruit merely coming apart.
 #define FC_JUICE_PER_CUT 14
 #define FC_JUICE_TTL 22               // frames a droplet lives
-#define FC_JUICE_SPEED_MIN 180        // 8.8, along the cut normal
-#define FC_JUICE_SPEED_MAX 900
+// Raised alongside the faster arc: against fruit now travelling ~15px/frame,
+// the old droplet speeds read as the splash barely leaving the cut.
+#define FC_JUICE_SPEED_MIN 300        // 8.8, along the cut normal
+#define FC_JUICE_SPEED_MAX 1500
 #define FC_JUICE_SPREAD 40            // percent of the speed applied sideways
 #define FC_JUICE_RADIUS_MAX 6         // px at spawn, shrinking to 1 as it dies
 

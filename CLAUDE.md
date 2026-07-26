@@ -108,6 +108,16 @@ only append to the blade buffer, which the slice test then consumes.
   key reads as 0 and the game defaults to EASY instead of NORMAL.
 - **The Gothic system fonts have no arrow glyphs.** `▲`/`▼` render as tofu
   boxes; the title screen's difficulty arrows are drawn with `prv_tri` instead.
+- **`FC_AIRTIME_FRAMES` is the one knob for how heavy the game feels.** Gravity
+  is derived as `1/t^2`, so changing it moves the whole arc at once — do not
+  hand-tune gravity and launch speed separately. Three things are calibrated
+  against it and need revisiting whenever it moves: the spawn intervals (shorter
+  flights empty the field), the launch `vx` jitter in `prv_spawn` (the aim term
+  scales with airtime, the jitter does not), and the juice gravity divisor.
+  Note the target is *not* literal gravity: at watch scale a 170px toss would
+  land in well under a tenth of a second, so this is tuned to the fastest arc
+  that is still cuttable. Keep per-frame travel below the smallest fruit radius
+  or the slice test starts tunnelling between frames.
 - Physics constants are derived from `layer_get_bounds()` at runtime, never
   hardcoded, so the 200x228 and 260x260 screens play identically.
 

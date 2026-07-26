@@ -637,20 +637,29 @@ void draw_title(GContext *ctx, GRect bounds, bool touch_ok) {
   GFont bold = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
   GFont small = fonts_get_system_font(FONT_KEY_GOTHIC_18);
 
-  // The screen now carries five rows, so it is laid out as one stack measured
-  // from the top of the block rather than around the centre.
+  // Five stacked rows. The row heights are named so the block's total height is
+  // summed rather than guessed, and the stack starts at whatever y centres that
+  // total -- add or resize a row and it stays centred on both screens by itself.
+  const int16_t row_preview = 30;
+  const int16_t row_title = 36;
+  const int16_t row_diff = 26;
+  const int16_t row_best = 24;
+  const int16_t row_hint = 24;
+  const int16_t stack_h =
+      row_preview + row_title + row_diff + row_best + row_hint;
+
   const int16_t step = bounds.size.w / 5;
-  int16_t y = bounds.size.h / 2 - PBL_IF_ROUND_ELSE(84, 90);
+  int16_t y = (bounds.size.h - stack_h) / 2;
 
   for (unsigned i = 0; i < ARRAY_LENGTH(preview); i++) {
     draw_fruit(ctx, preview[i], GPoint(step * (i + 1), y + 12), 12, 0);
   }
-  y += 30;
+  y += row_preview;
 
   graphics_context_set_text_color(ctx, GColorWhite);
-  graphics_draw_text(ctx, "FRUIT CHOP", big, GRect(0, y, bounds.size.w, 34),
+  graphics_draw_text(ctx, "FRUIT CHOP", big, GRect(0, y, bounds.size.w, row_title),
                      GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
-  y += 36;
+  y += row_title;
 
   // Difficulty, flanked by triangles pointing the way the two buttons sit on
   // the case: UP to the left, DOWN to the right. The arrows are drawn rather
@@ -658,25 +667,25 @@ void draw_title(GContext *ctx, GRect bounds, bool touch_ok) {
   // come out as tofu boxes.
   graphics_context_set_text_color(ctx, GColorYellow);
   graphics_draw_text(ctx, game_difficulty_name(game_get_difficulty()), bold,
-                     GRect(0, y, bounds.size.w, 24),
+                     GRect(0, y, bounds.size.w, row_diff),
                      GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
   graphics_context_set_fill_color(ctx, GColorYellow);
   const int16_t arrow_x = 52;
   const int16_t arrow_y = y + 13;
   prv_tri(ctx, GPoint(bounds.size.w / 2 - arrow_x, arrow_y), 6, true);
   prv_tri(ctx, GPoint(bounds.size.w / 2 + arrow_x, arrow_y), 6, false);
-  y += 26;
+  y += row_diff;
 
   char best[24];
   snprintf(best, sizeof(best), "Best %d", game_get_high_score());
   graphics_context_set_text_color(ctx, GColorLightGray);
-  graphics_draw_text(ctx, best, small, GRect(0, y, bounds.size.w, 24),
+  graphics_draw_text(ctx, best, small, GRect(0, y, bounds.size.w, row_best),
                      GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
-  y += 24;
+  y += row_best;
 
   graphics_context_set_text_color(ctx, GColorWhite);
   graphics_draw_text(ctx, touch_ok ? "SELECT to start" : "Touch unavailable",
-                     small, GRect(0, y, bounds.size.w, 24),
+                     small, GRect(0, y, bounds.size.w, row_hint),
                      GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 }
 

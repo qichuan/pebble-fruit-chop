@@ -27,10 +27,10 @@ typedef struct {
 } DifficultySpec;
 
 static const DifficultySpec s_difficulty[DIFF_COUNT] = {
-  [DIFF_EASY]   = { 44, 26, 7,  "EASY" },
+  [DIFF_EASY]   = { 28, 16, 7,  "EASY" },
   [DIFF_NORMAL] = { FC_SPAWN_INTERVAL, FC_SPAWN_INTERVAL_MIN, FC_BOMB_CHANCE_PCT,
                     "NORMAL" },
-  [DIFF_HARD]   = { 26, 10, 22, "HARD" },
+  [DIFF_HARD]   = { 16, 7,  22, "HARD" },
 };
 
 static Difficulty s_difficulty_sel = DIFF_NORMAL;
@@ -195,8 +195,10 @@ static void prv_spawn(void) {
   f->y = FP(s_bounds.size.h + f->radius);
 
   // Drift toward the horizontal centre so the arc stays on screen, plus jitter.
+  // The aim term scales with airtime on its own; the jitter does not, so it is
+  // sized to give the same lateral spread over the now-shorter flight.
   const int32_t to_centre = (s_bounds.size.w / 2) - launch_x;
-  f->vx = (FP(to_centre) / FC_AIRTIME_FRAMES) + fc_rand_range(-40, 40);
+  f->vx = (FP(to_centre) / FC_AIRTIME_FRAMES) + fc_rand_range(-70, 70);
 
   // Jitter the launch speed +/-15% so the arcs are not identical.
   f->vy = s_launch_vy + ((s_launch_vy * fc_rand_range(-15, 15)) / 100);
@@ -300,9 +302,10 @@ void game_step(void) {
     if (!j->active) {
       continue;
     }
-    // Droplets are light, so they arc harder than the fruit they came from and
-    // the splash collapses quickly instead of drifting.
-    j->vy += s_gravity + (s_gravity / 2);
+    // Droplets hang rather than arc harder than the fruit. That is backwards
+    // physically, but gravity is now strong enough that matching it collapses
+    // the splash before it can be seen at 30fps.
+    j->vy += s_gravity / 2;
     j->x += j->vx;
     j->y += j->vy;
     if (--j->ttl == 0 || j->y > floor_y) {
