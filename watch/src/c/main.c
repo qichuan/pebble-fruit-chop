@@ -33,6 +33,7 @@ static void prv_debug_start_swipe(FruitType type) {
   }
   const GRect b = layer_get_bounds(s_canvas);
   game_debug_park(type, GPoint(b.size.w / 2, b.size.h / 2));
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "debug swipe target: %s", fruit_profile(type)->name);
 
   // A line through the exact centre, so the parked target is always crossed.
   s_dbg_from = GPoint((b.size.w * 15) / 100, (b.size.h * 65) / 100);
@@ -121,8 +122,12 @@ static void prv_up_click(ClickRecognizerRef recognizer, void *context) {
   prv_debug_start_swipe(FRUIT_BOMB);  // verifies the bomb -> game over path
 }
 
+// Cycles the roster, so every fruit can be cut and screenshotted from the CLI
+// without a rebuild between them.
 static void prv_down_click(ClickRecognizerRef recognizer, void *context) {
-  prv_debug_start_swipe(FRUIT_DURIAN);
+  static int s_dbg_fruit = -1;
+  s_dbg_fruit = (s_dbg_fruit + 1) % FRUIT_BOMB;
+  prv_debug_start_swipe((FruitType)s_dbg_fruit);
 }
 #endif
 

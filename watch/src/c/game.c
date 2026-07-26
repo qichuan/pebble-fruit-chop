@@ -69,7 +69,8 @@ static void prv_spawn(void) {
   f->type = is_bomb ? FRUIT_BOMB
                     : (FruitType)fc_rand_range(0, FRUIT_BOMB - 1);
   f->radius = is_bomb ? BOMB_RADIUS
-                      : (uint8_t)fc_rand_range(FRUIT_RADIUS_MIN, FRUIT_RADIUS_MAX);
+                      : (uint8_t)((fc_rand_range(FRUIT_RADIUS_MIN, FRUIT_RADIUS_MAX) *
+                                   fruit_profile(f->type)->size_pct) / 100);
 
   // Launch from just below the bottom edge, aimed back toward the middle so
   // fruit stays on screen long enough to be sliceable.
@@ -260,7 +261,9 @@ void game_debug_park(FruitType type, GPoint at) {
     return;
   }
   f->type = type;
-  f->radius = (type == FRUIT_BOMB) ? BOMB_RADIUS : FRUIT_RADIUS_MAX;
+  f->radius = (type == FRUIT_BOMB)
+      ? BOMB_RADIUS
+      : (uint8_t)((FRUIT_RADIUS_MAX * fruit_profile(type)->size_pct) / 100);
   f->x = FP(at.x);
   f->y = FP(at.y);
   // Stationary: the physics step still applies gravity, but over the handful of

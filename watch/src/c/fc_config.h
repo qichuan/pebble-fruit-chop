@@ -25,9 +25,17 @@
 #define MAX_HALVES 12
 #define MAX_BLADE_POINTS 12
 
-#define FRUIT_RADIUS_MIN 11
-#define FRUIT_RADIUS_MAX 16
-#define BOMB_RADIUS 12
+// Base radius before the per-type size_pct in fruit.c is applied. The range is
+// deliberately narrow: the profile table now supplies the size variety (a
+// strawberry is small, a watermelon is big), so this jitter only has to stop
+// two of the same fruit looking stamped from the same die. Effective radius
+// across the roster works out at roughly 13-24px.
+#define FRUIT_RADIUS_MIN 16
+#define FRUIT_RADIUS_MAX 19
+#define BOMB_RADIUS 16
+
+// Points in the scratch GPath shared by the polygon-shaped fruits.
+#define FC_MAX_PATH_POINTS 12
 
 // Spawning. One spawn attempt every FC_SPAWN_INTERVAL frames, shrinking toward
 // FC_SPAWN_INTERVAL_MIN as the score climbs.

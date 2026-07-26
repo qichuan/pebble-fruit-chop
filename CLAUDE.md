@@ -41,6 +41,7 @@ emulator-touching command in a headless environment.
 | --- | --- |
 | `fc_config.h` | Every tunable in the game. Start here when adjusting feel. |
 | `fixed.h` | 8.8 fixed-point macros and the RNG helper. |
+| `fruit.c/.h` | The roster. `FruitType` plus one `FruitProfile` row per fruit: skin, flesh, silhouette, relative size. Adding a fruit is an enum member and a row. |
 | `main.c` | Window lifecycle, the AppTimer loop, state machine, buttons, touch subscription, and the debug swipe harness. |
 | `game.c/.h` | Pure simulation: entity pools, physics, spawning, slice resolution, score, lives. No `graphics_*` calls. |
 | `blade.c/.h` | Touch point buffer, speed gating, trail rendering. `blade_feed()` is the single input entry point. |
@@ -62,9 +63,28 @@ only append to the blade buffer, which the slice test then consumes.
   returns a maths-convention angle from +x; `graphics_fill_radial`, `sin_lookup`
   and `cos_lookup` measure from straight up, clockwise. `game_slice_segment`
   corrects for this; without it, cut faces come out perpendicular to the swipe.
-- **`GColorOrange` is not usable next to `GColorRed`.** Through the display
-  filter both render around (228, 95, 100), making apples and oranges
-  indistinguishable. Oranges use `GColorChromeYellow` instead.
+- **`FRUIT_BOMB` must stay last in `FruitType`,** immediately before
+  `FRUIT_TYPE_COUNT`. `prv_spawn` picks a fruit with
+  `fc_rand_range(0, FRUIT_BOMB - 1)`, so everything below the bomb is edible.
+- **The display filter squashes the warm colours together**, and sixteen fruits
+  do not fit in what is left. `GColorOrange` renders around (228, 95, 100) —
+  i.e. as red — so it is never a body fill; oranges use `GColorChromeYellow`.
+  But `GColorChromeYellow` and `GColorRajah` in turn land in the same salmon
+  band as `GColorMelon`, so orange, mango and peach cannot be separated by
+  colour either: the mango is a true `GColorYellow` with a red cheek, and all
+  three halve into different cut faces. Check any new colour against a
+  screenshot, never against its name.
+- **Colour alone is not enough, so every fruit also carries a silhouette and a
+  mark.** `FruitShape` is circle, two-lobed, or polygon (a `GPath` over a static
+  buffer — no `gpath_create`, no malloc), and `prv_draw_detail` adds the stem,
+  crown, seeds or crease. The pairs closest in hue are always the ones separated
+  by shape.
+- **Sliced halves are pie sectors whatever the whole fruit's shape.**
+  `graphics_fill_radial` is the only primitive whose cut edge can be aimed along
+  the blade, and that alignment matters more than the silhouette for the few
+  frames a half is on screen. Types whose insides are the recognisable part
+  (watermelon pips, citrus segments, kiwi and passion seeds, stone fruit stones)
+  get their detail drawn on the cut face instead.
 - **The touch sensor draws power while subscribed**, so subscribe in
   `window_appear` and unsubscribe in `window_disappear`, not load/unload.
 - Physics constants are derived from `layer_get_bounds()` at runtime, never
@@ -75,7 +95,14 @@ only append to the blade buffer, which the slice test then consumes.
 `FC_DEBUG_SWIPE` in `fc_config.h` (currently `1`) makes the buttons drive
 scripted swipes so the slice pipeline can be exercised and screenshotted from the
 CLI. During play: **SELECT** cuts a watermelon, **UP** cuts a bomb (ends the run),
-**DOWN** cuts a durian.
+**DOWN** cuts the next fruit in the roster, cycling through all sixteen so each
+can be screenshotted without a rebuild. The parked target's name is logged.
+
+Two things to know when scripting it. Natural spawns keep falling in the gaps
+between button presses, so a long capture run loses all three lives partway
+through — restart between cuts with SELECT ... DOWN ... screenshot ... BACK, which
+stays inside the app. Pressing BACK on the title screen exits to the launcher and
+resets the cycle counter.
 
 Each one clears the field, parks a stationary target at the centre, then feeds
 fabricated `TouchEvent`s through `blade_feed()` — byte-for-byte the same entry

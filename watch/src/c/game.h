@@ -2,15 +2,7 @@
 
 #include <pebble.h>
 #include "fc_config.h"
-
-typedef enum {
-  FRUIT_APPLE = 0,
-  FRUIT_ORANGE,
-  FRUIT_WATERMELON,
-  FRUIT_DURIAN,
-  FRUIT_BOMB,
-  FRUIT_TYPE_COUNT,
-} FruitType;
+#include "fruit.h"
 
 typedef enum {
   STATE_TITLE = 0,

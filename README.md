@@ -2,10 +2,12 @@
 
 A Fruit Ninja-style game for Pebble Time 2 and Pebble Round 2.
 
-Fruits arc up from the bottom of the screen — apples, oranges, watermelons and
-durians. Swipe across the touchscreen to slice them. Each fruit splits along the
-line of your swipe. Slice a bomb and the run is over; drop three fruits and it is
-over too.
+Sixteen fruits arc up from the bottom of the screen — watermelon, mango,
+pineapple, coconut, strawberry, green and red apple, kiwifruit, banana, lemon,
+lime, orange, plum, pear, passion fruit and peach — each with its own colour,
+silhouette and size. Swipe across the touchscreen to slice them. Each fruit
+splits along the line of your swipe. Slice a bomb and the run is over; drop three
+fruits and it is over too.
 
 ## Requirements
 
