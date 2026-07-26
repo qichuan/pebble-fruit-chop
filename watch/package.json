@@ -1,0 +1,36 @@
+{
+  "name": "fruit-chop",
+  "author": "Zhang Qichuan",
+  "version": "1.0.0",
+  "keywords": [
+    "pebble-app",
+    "game",
+    "fruit",
+    "touch"
+  ],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "Fruit Chop",
+    "uuid": "1f031b67-dd55-4345-a883-0f5a569a7d30",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "emery",
+      "gabbro"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "resources": {
+      "media": [
+        {
+          "menuIcon": true,
+          "type": "png",
+          "name": "IMAGE_MENU_ICON",
+          "file": "images/menu_icon.png"
+        }
+      ]
+    }
+  }
+}
