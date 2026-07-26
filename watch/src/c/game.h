@@ -28,7 +28,13 @@ typedef struct {
   FruitType type;
   int32_t x, y;
   int32_t vx, vy;
-  int32_t angle;    // start of this half's 180-degree sector
+  int32_t angle;       // start of this half's 180-degree sector
+  // The parent fruit's own rotation at the moment of the cut. Kept alongside
+  // `angle` because the two are independent: `angle` says where the blade went,
+  // this says which way the fruit was facing, and draw_half needs both to clip
+  // the right piece off the right silhouette. Both advance by `spin`, so they
+  // stay locked to each other as the half tumbles.
+  int32_t body_angle;
   int32_t spin;
   uint8_t radius;
   uint8_t ttl;      // frames remaining

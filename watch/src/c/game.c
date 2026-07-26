@@ -114,6 +114,7 @@ static void prv_split(const Fruit *f, int32_t cut_angle) {
     h->vx = f->vx + (side ? kick_x : -kick_x);
     h->vy = f->vy + (side ? kick_y : -kick_y);
     h->angle = cut_angle + (side ? (TRIG_MAX_ANGLE / 2) : 0);
+    h->body_angle = f->angle;
     h->spin = side ? (FC_SPIN_MIN / 2) : -(FC_SPIN_MIN / 2);
     h->radius = f->radius;
     h->ttl = FC_HALF_TTL;
@@ -167,7 +168,10 @@ void game_step(void) {
     h->vy += s_gravity;
     h->x += h->vx;
     h->y += h->vy;
+    // Both angles take the same spin, so the cut face keeps pointing the same
+    // way relative to the piece it belongs to.
     h->angle += h->spin;
+    h->body_angle += h->spin;
     if (--h->ttl == 0 || h->y > floor_y + FP(h->radius)) {
       h->active = false;
     }

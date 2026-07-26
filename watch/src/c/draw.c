@@ -32,10 +32,28 @@ static GPoint prv_local(GPoint c, int16_t r, int32_t angle, int dx, int dy) {
 // rotation and offset at zero -- one convention for silhouette and detail alike.
 // ---------------------------------------------------------------------------
 
-static GPoint s_path_pts[FC_MAX_PATH_POINTS];
-static GPath s_path = { .num_points = 0, .points = s_path_pts };
+// One file-static GPath, pointed at whichever buffer is being filled. GPath is
+// a public struct with public fields, so this avoids gpath_create's malloc.
+// Points are written already rotated and translated by prv_local, leaving the
+// path's own rotation and offset at zero -- one convention throughout.
+static GPath s_path = { .num_points = 0, .points = NULL };
 
-// Templates are int8_t x,y pairs in units of r/32, authored upright.
+static GPoint s_poly[FC_MAX_OUTLINE_POINTS];
+static GPoint s_clip[FC_MAX_CLIP_POINTS];
+
+static void prv_fill_points(GContext *ctx, GPoint *pts, int n) {
+  if (n < 3) {
+    return;
+  }
+  s_path.points = pts;
+  s_path.num_points = n;
+  gpath_draw_filled(ctx, &s_path);
+}
+
+// Templates are int8_t x,y pairs in units of r/32, authored upright and wound
+// in a single direction. Every fruit has one, including the round ones: it is
+// the silhouette draw_half clips against the blade, so a shape here is what
+// stops a cut banana coming apart as two half-circles.
 static const int8_t s_banana[] = {
   -30, 10, -22, -6, -8, -16, 8, -16, 22, -6, 30, 10,
    26, 13,  14,  3,  0,  0, -14, 3, -26, 13,
@@ -48,17 +66,98 @@ static const int8_t s_pineapple[] = {
     0, -26,  18, -22,  22, -8,  22, 10,  14, 24,
     0,  28, -14,  24, -22, 10, -22, -8, -18, -22,
 };
+// A 16-gon: at the radii the game uses, its facets are under a pixel, so a cut
+// circle still reads as a circle.
+static const int8_t s_round[] = {
+    0, -32,  12, -30,  23, -23,  30, -12,  32,  0,  30, 12,  23, 23,  12, 30,
+    0,  32, -12,  30, -23,  23, -30,  12, -32,  0, -30, -12, -23, -23, -12, -30,
+};
+// Matches prv_fill_lobed's two equal circles: an ellipse 0.69r wide by r tall.
+static const int8_t s_oval[] = {
+    0, -32,  11, -28,  19, -16,  22, 0,  19, 16,  11, 28,
+    0,  32, -11,  28, -19,  16, -22, 0, -19, -16, -11, -28,
+};
+static const int8_t s_pear[] = {
+    0, -28,  14, -22,  18, -8,  18,  6,  25, 20,  18, 33,
+    0,  35, -18,  33, -25,  20, -18,  6, -18, -8, -14, -22,
+};
+
+// The silhouette for any fruit, as a template and a vertex count.
+static int prv_outline(FruitType type, const int8_t **tmpl) {
+  switch (fruit_profile(type)->shape) {
+    case FRUIT_SHAPE_LOBED:
+      if (type == FRUIT_PEAR) {
+        *tmpl = s_pear;
+        return ARRAY_LENGTH(s_pear) / 2;
+      }
+      *tmpl = s_oval;
+      return ARRAY_LENGTH(s_oval) / 2;
+
+    case FRUIT_SHAPE_PATH:
+      switch (type) {
+        case FRUIT_BANANA:
+          *tmpl = s_banana;
+          return ARRAY_LENGTH(s_banana) / 2;
+        case FRUIT_STRAWBERRY:
+          *tmpl = s_strawberry;
+          return ARRAY_LENGTH(s_strawberry) / 2;
+        default:
+          *tmpl = s_pineapple;
+          return ARRAY_LENGTH(s_pineapple) / 2;
+      }
+
+    default:
+      *tmpl = s_round;
+      return ARRAY_LENGTH(s_round) / 2;
+  }
+}
+
+// Scales a template to radius r, rotates it by `angle` about c, and writes it
+// to s_poly. Passing a reduced r is how the inset flesh polygon is built.
+static int prv_build(const int8_t *tmpl, int n, GPoint c, int16_t r, int32_t angle) {
+  if (n > FC_MAX_OUTLINE_POINTS) {
+    n = FC_MAX_OUTLINE_POINTS;
+  }
+  for (int i = 0; i < n; i++) {
+    s_poly[i] = prv_local(c, r, angle, tmpl[2 * i], tmpl[2 * i + 1]);
+  }
+  return n;
+}
 
 static void prv_fill_path(GContext *ctx, const int8_t *tmpl, int n,
                           GPoint c, int16_t r, int32_t angle) {
-  if (n > FC_MAX_PATH_POINTS) {
-    n = FC_MAX_PATH_POINTS;
+  prv_fill_points(ctx, s_poly, prv_build(tmpl, n, c, r, angle));
+}
+
+// Sutherland-Hodgman clip of s_poly against the half-plane through `c` whose
+// inward normal points along `normal_angle`, result in s_clip. This is what
+// gives each half the shape the blade actually left behind: the curved side is
+// the fruit's own outline, and the straight side is the cut.
+//
+// The normal is scaled down from the trig lookup so the dot products stay small
+// enough for the intersection's fixed-point divide to have headroom in int32.
+static int prv_clip_halfplane(int n, GPoint c, int32_t normal_angle) {
+  const int32_t nx = sin_lookup(normal_angle) >> 8;
+  const int32_t ny = -(cos_lookup(normal_angle) >> 8);
+
+  int m = 0;
+  for (int i = 0; i < n && m < FC_MAX_CLIP_POINTS; i++) {
+    const GPoint p0 = s_poly[i];
+    const GPoint p1 = s_poly[(i + 1) % n];
+    const int32_t s0 = (p0.x - c.x) * nx + (p0.y - c.y) * ny;
+    const int32_t s1 = (p1.x - c.x) * nx + (p1.y - c.y) * ny;
+
+    if (s0 >= 0) {
+      s_clip[m++] = p0;
+    }
+    // Sign change means the edge crosses the blade: emit the crossing point.
+    if ((s0 >= 0) != (s1 >= 0) && m < FC_MAX_CLIP_POINTS) {
+      const int32_t t = (s0 * FP_ONE) / (s0 - s1);
+      s_clip[m++] = GPoint((int16_t)(p0.x + (((p1.x - p0.x) * t) >> FP_SHIFT)),
+                           (int16_t)(p0.y + (((p1.y - p0.y) * t) >> FP_SHIFT)));
+    }
   }
-  for (int i = 0; i < n; i++) {
-    s_path_pts[i] = prv_local(c, r, angle, tmpl[2 * i], tmpl[2 * i + 1]);
-  }
-  s_path.num_points = n;
-  gpath_draw_filled(ctx, &s_path);
+  return m;
 }
 
 // Two circles on the spin axis. Equal lobes read as an oval (lemon, mango); a
@@ -349,45 +448,53 @@ void draw_fruit(GContext *ctx, FruitType type, GPoint c, int16_t r, int32_t angl
 void draw_half(GContext *ctx, const Half *h) {
   const GPoint c = GPoint(FP_INT(h->x), FP_INT(h->y));
   const int16_t r = h->radius;
-  const GRect rect = GRect(c.x - r, c.y - r, 2 * r, 2 * r);
 
-  // A half is a 180-degree pie slice. game.c bakes the cut direction into
-  // h->angle at split time, so the flat face lines up with the actual swipe.
-  // Every type halves into a sector, including the polygon-bodied ones:
-  // graphics_fill_radial is the only primitive whose cut edge can be aimed
-  // along the blade, and that alignment matters more than the silhouette does
-  // for the few frames a half is on screen.
+  // A half is the fruit's own silhouette with everything on the far side of the
+  // blade clipped away, so a cut banana leaves two pieces of banana rather than
+  // two half-circles. h->angle is the cut direction game.c baked in at split
+  // time; the inward normal is a quarter turn from it, and h->body_angle says
+  // which way the silhouette itself was facing.
   const int32_t a0 = h->angle;
-  const int32_t a1 = a0 + (TRIG_MAX_ANGLE / 2);
+  const int32_t normal = a0 + (TRIG_MAX_ANGLE / 4);
 
   graphics_context_set_antialiased(ctx, true);
 
   if (h->type == FRUIT_BOMB) {
+    // The bomb is a plain circle and never spins into anything else, so the
+    // sector primitive still draws it exactly right.
     graphics_context_set_fill_color(ctx, GColorBlack);
-    graphics_fill_radial(ctx, rect, GOvalScaleModeFitCircle, r, a0, a1);
+    graphics_fill_radial(ctx, GRect(c.x - r, c.y - r, 2 * r, 2 * r),
+                         GOvalScaleModeFitCircle, r, a0, a0 + (TRIG_MAX_ANGLE / 2));
     return;
   }
 
   const FruitProfile *p = fruit_profile(h->type);
+  const int8_t *tmpl;
+  const int n = prv_outline(h->type, &tmpl);
 
-  graphics_context_set_fill_color(ctx, prv_col(p->skin));
-  graphics_fill_radial(ctx, rect, GOvalScaleModeFitCircle, r, a0, a1);
-
-  // Exposed cut face, inset so the skin still shows as a rind. The inset tracks
-  // the radius: a flat 3px rind vanishes on the larger fruit.
+  // Rind thickness tracks the radius: a flat 3px rind vanishes on larger fruit.
   int16_t rind = r / 6;
   if (rind < 3) {
     rind = 3;
   } else if (rind > 5) {
     rind = 5;
   }
+
+  graphics_context_set_fill_color(ctx, prv_col(p->skin));
+  prv_build(tmpl, n, c, r, h->body_angle);
+  prv_fill_points(ctx, s_clip, prv_clip_halfplane(n, c, normal));
+
+  // The flesh is the same outline shrunk by the rind, clipped on the same line
+  // rather than an inset one. That is what leaves a rind around the curved edge
+  // while the flat cut face stays bare flesh, as a real cut does.
   graphics_context_set_fill_color(ctx, prv_col(p->flesh));
-  graphics_fill_radial(ctx, grect_inset(rect, GEdgeInsets(rind)),
-                       GOvalScaleModeFitCircle, r, a0, a1);
+  prv_build(tmpl, n, c, r - rind, h->body_angle);
+  prv_fill_points(ctx, s_clip, prv_clip_halfplane(n, c, normal));
 
   // Detail on the cut face, for the fruits whose insides are the recognisable
-  // part. The mid-angle is where the sector has the most room.
-  const int32_t mid = a0 + (TRIG_MAX_ANGLE / 4);
+  // part. The mid-angle is where the exposed face has the most room. Radii stay
+  // well inside r so the marks cannot poke out of a narrow silhouette.
+  const int32_t mid = normal;
   switch (h->type) {
     case FRUIT_WATERMELON:
       graphics_context_set_fill_color(ctx, GColorBlack);
@@ -407,18 +514,18 @@ void draw_half(GContext *ctx, const Half *h) {
                                                           : GColorWhite));
       for (int i = -1; i <= 1; i++) {
         graphics_draw_line(ctx, c,
-                           prv_on_circle(c, r - rind, mid + i * (TRIG_MAX_ANGLE / 6)));
+                           prv_on_circle(c, (r * 3) / 5, mid + i * (TRIG_MAX_ANGLE / 6)));
       }
       break;
 
     case FRUIT_PEACH:
     case FRUIT_PLUM:
     case FRUIT_MANGO:
-      // The stone. Without it these three halve into the same plain sector as
-      // each other and as the orange.
+      // The stone: the same outline again at half size, clipped on the same
+      // line, so it sits in the cut face as a halved stone would.
       graphics_context_set_fill_color(ctx, GColorBulgarianRose);
-      graphics_fill_radial(ctx, grect_inset(rect, GEdgeInsets(r / 2)),
-                           GOvalScaleModeFitCircle, r, a0, a1);
+      prv_build(tmpl, n, c, r / 2, h->body_angle);
+      prv_fill_points(ctx, s_clip, prv_clip_halfplane(n, c, normal));
       break;
 
     case FRUIT_KIWI:

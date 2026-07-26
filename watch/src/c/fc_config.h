@@ -34,8 +34,12 @@
 #define FRUIT_RADIUS_MAX 19
 #define BOMB_RADIUS 16
 
-// Points in the scratch GPath shared by the polygon-shaped fruits.
-#define FC_MAX_PATH_POINTS 12
+// Vertices in a fruit's silhouette template, and in the polygon left after that
+// silhouette is clipped against the blade. Clipping a convex polygon against
+// one half-plane adds at most one vertex, so the second only needs to be a
+// little larger than the first.
+#define FC_MAX_OUTLINE_POINTS 16
+#define FC_MAX_CLIP_POINTS 18
 
 // Spawning. One spawn attempt every FC_SPAWN_INTERVAL frames, shrinking toward
 // FC_SPAWN_INTERVAL_MIN as the score climbs.
