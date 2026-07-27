@@ -8,6 +8,9 @@ A Fruit Ninja-style game for Pebble Time 2 and Pebble Round 2.
   <img src="developer-portal/screenshots/emery/slice.gif" width="220" alt="A single swipe cutting four fruits in half, with juice">
 </p>
 
+
+Download it from [Pebble App Store](https://apps.repebble.com/82fc69b2d0964fe28e2520c3)
+
 Sixteen fruits arc up from the bottom of the screen — watermelon, mango,
 pineapple, coconut, strawberry, green and red apple, kiwifruit, banana, lemon,
 lime, orange, plum, pear, passion fruit and peach — each with its own colour,
