@@ -87,7 +87,7 @@
 // touch packet, so the slice pipeline is otherwise unreachable from the CLI.
 // With this set, the UP button fires a synthetic swipe through the same
 // blade_feed() entry point that real touch events use.
-#define FC_DEBUG_SWIPE 1
+#define FC_DEBUG_SWIPE 0
 #define FC_DEBUG_SWIPE_STEPS 8
 // Frames the field is held still after a scripted swipe. `pebble screenshot` is
 // a ~1s round trip, so without a generous pause the halves have flown off

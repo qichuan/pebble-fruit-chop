@@ -123,7 +123,7 @@ only append to the blade buffer, which the slice test then consumes.
 
 ## Debug swipe harness
 
-`FC_DEBUG_SWIPE` in `fc_config.h` (currently `1`) makes the buttons drive
+`FC_DEBUG_SWIPE` in `fc_config.h` (currently `0`) makes the buttons drive
 scripted swipes so the slice pipeline can be exercised and screenshotted from the
 CLI. During play: **SELECT** cuts a watermelon, **UP** cuts a bomb (ends the run),
 **DOWN** cuts the next fruit in the roster, cycling through all sixteen so each
@@ -145,7 +145,12 @@ After the cut it runs `FC_DEBUG_SETTLE_FRAMES` of physics so the halves separate
 then freezes the field for `FC_DEBUG_FREEZE_FRAMES` because `pebble screenshot`
 is a ~1s round trip and the halves would otherwise be gone before capture.
 
-**Set `FC_DEBUG_SWIPE` to `0` before publishing.**
+**It is `0` in the shipping build, and must stay that way.** With it on, SELECT
+/ UP / DOWN slice fruit during play, which reads as a cheat — the buttons are
+supposed to do nothing mid-game. Set it to `1` only while developing, and put it
+back before building anything a player will see. With it off there is no path
+from a button press to `game_slice_segment` at all: the only caller is
+`blade_feed()`, and the only caller of that is the real touch handler.
 
 ## Conventions
 
@@ -169,6 +174,10 @@ pebble emu-button --emulator emery click select   # title -> playing
 pebble emu-button --emulator emery click select   # scripted slice; field freezes
 pebble screenshot --emulator emery --no-open slice.png
 ```
+
+The second SELECT only cuts anything with `FC_DEBUG_SWIPE` set to `1`; in the
+shipping build the buttons do nothing during play, so temporarily flip the flag
+to exercise the slice pipeline and flip it back afterwards.
 
 Repeat with `--emulator gabbro` to confirm the round HUD is not clipped.
 
