@@ -29,10 +29,12 @@
 #define FC_SPIN_MAX 1600
 
 // Entity pools. Fixed-size, no malloc, well under the 128K app RAM budget.
-#define MAX_FRUITS 10
-#define MAX_HALVES 12
+// Sized for the hardest case: HARD at its spawn floor averages ~10 fruit in
+// flight, so the pool has to clear that or waves get silently dropped.
+#define MAX_FRUITS 12
+#define MAX_HALVES 16
 #define MAX_BLADE_POINTS 12
-#define MAX_JUICE 40
+#define MAX_JUICE 56
 
 // Base radius before the per-type size_pct in fruit.c is applied. The range is
 // deliberately narrow: the profile table now supplies the size variety (a
@@ -55,9 +57,9 @@
 // scales both ends and the bomb rate; these are the normal-difficulty values.
 // Scaled down with FC_AIRTIME_FRAMES: fruit now clears the screen in 57% of the
 // time it used to, so the same interval would leave the field noticeably emptier.
-#define FC_SPAWN_INTERVAL 21
-#define FC_SPAWN_INTERVAL_MIN 10
-#define FC_BOMB_CHANCE_PCT 14         // percent of spawns that are bombs
+#define FC_SPAWN_INTERVAL 23
+#define FC_SPAWN_INTERVAL_MIN 14
+#define FC_BOMB_CHANCE_PCT 18         // percent of spawns that are bombs
 
 // Juice. A cut throws a burst of droplets along the blade's normal, which is
 // what sells the slice as wet rather than as a fruit merely coming apart.

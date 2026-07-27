@@ -15,22 +15,33 @@ static int s_spawn_timer;
 // ---------------------------------------------------------------------------
 // Difficulty
 //
-// Only the spawn pressure and the bomb rate change. Physics stays identical so
-// the game feels the same in the hand at every setting -- easy gives you more
-// room to work in, hard gives you less, but a fruit never flies differently.
+// How much arrives at once, how often, and how much of it is a bomb. Physics
+// stays identical so the game feels the same in the hand at every setting --
+// easy gives you more room to work in, hard gives you less, but a fruit never
+// flies differently.
 // ---------------------------------------------------------------------------
 typedef struct {
-  uint8_t interval;      // frames between spawn attempts at score 0
+  uint8_t interval;      // frames between waves at score 0
   uint8_t interval_min;  // floor once the score has climbed
-  uint8_t bomb_pct;
+  uint8_t burst_min;     // fruits launched together in one wave
+  uint8_t burst_max;
+  uint8_t bomb_pct;      // chance per item, capped at one bomb per wave
   const char *name;
 } DifficultySpec;
 
+// Wave size is what actually separates the settings. Tightening the interval
+// alone only ever changed how *often* a single fruit appeared, which at these
+// airtimes is a difference of one or two fruit on screen -- barely noticeable.
+// Throwing two or three at once forces the player to plan a stroke through
+// several targets, which is a different kind of play rather than a faster one.
+//
+// Fruit on screen, at score 0 -> at the spawn floor:
+//   EASY    1.5 -> 2.3      NORMAL  3.0 -> 4.9      HARD  5.0 -> 10.5
 static const DifficultySpec s_difficulty[DIFF_COUNT] = {
-  [DIFF_EASY]   = { 28, 16, 7,  "EASY" },
-  [DIFF_NORMAL] = { FC_SPAWN_INTERVAL, FC_SPAWN_INTERVAL_MIN, FC_BOMB_CHANCE_PCT,
-                    "NORMAL" },
-  [DIFF_HARD]   = { 16, 7,  22, "HARD" },
+  [DIFF_EASY]   = { 31, 20, 1, 1,  6, "EASY" },
+  [DIFF_NORMAL] = { FC_SPAWN_INTERVAL, FC_SPAWN_INTERVAL_MIN, 1, 2,
+                    FC_BOMB_CHANCE_PCT, "NORMAL" },
+  [DIFF_HARD]   = { 23, 11, 2, 3, 26, "HARD" },
 };
 
 static Difficulty s_difficulty_sel = DIFF_NORMAL;
@@ -173,31 +184,38 @@ static Half *prv_free_half(void) {
   return NULL;
 }
 
-static void prv_spawn(void) {
+// One fruit of a wave. `lane` of `lanes` divides the launch line into bands so
+// the members of a wave come up spread out instead of on top of each other.
+static void prv_spawn(int lane, int lanes, bool is_bomb) {
   Fruit *f = prv_free_fruit();
   if (!f) {
     return;
   }
 
-  const bool is_bomb =
-      (fc_rand_range(0, 99) < s_difficulty[s_difficulty_sel].bomb_pct);
   f->type = is_bomb ? FRUIT_BOMB
                     : (FruitType)fc_rand_range(0, FRUIT_BOMB - 1);
   f->radius = is_bomb ? BOMB_RADIUS
                       : (uint8_t)((fc_rand_range(FRUIT_RADIUS_MIN, FRUIT_RADIUS_MAX) *
                                    fruit_profile(f->type)->size_pct) / 100);
 
-  // Launch from just below the bottom edge, aimed back toward the middle so
-  // fruit stays on screen long enough to be sliceable.
+  // Launch from just below the bottom edge, from somewhere inside this lane.
   const int16_t margin = f->radius + 4;
-  const int16_t launch_x = (int16_t)fc_rand_range(margin, s_bounds.size.w - margin);
+  const int16_t span = s_bounds.size.w - 2 * margin;
+  const int16_t lo = margin + (int16_t)((span * lane) / lanes);
+  const int16_t hi = margin + (int16_t)((span * (lane + 1)) / lanes);
+  const int16_t launch_x = (int16_t)fc_rand_range(lo, hi);
   f->x = FP(launch_x);
   f->y = FP(s_bounds.size.h + f->radius);
 
   // Drift toward the horizontal centre so the arc stays on screen, plus jitter.
   // The aim term scales with airtime on its own; the jitter does not, so it is
   // sized to give the same lateral spread over the now-shorter flight.
-  const int32_t to_centre = (s_bounds.size.w / 2) - launch_x;
+  //
+  // Divided by the lane count: aiming every fruit at the exact centre is right
+  // for a lone fruit, but it makes a wave converge into a single clump halfway
+  // up. Dividing keeps a wave fanning outward while a single fruit behaves
+  // exactly as it did before.
+  const int32_t to_centre = ((s_bounds.size.w / 2) - launch_x) / lanes;
   f->vx = (FP(to_centre) / FC_AIRTIME_FRAMES) + fc_rand_range(-70, 70);
 
   // Jitter the launch speed +/-15% so the arcs are not identical.
@@ -209,6 +227,24 @@ static void prv_spawn(void) {
     f->spin = -f->spin;
   }
   f->active = true;
+}
+
+// A wave: several fruit launched on the same frame, spread across the width.
+// At most one bomb per wave, however many items it holds -- rolling each item
+// independently would sometimes throw up two or three bombs at once, which
+// leaves no safe stroke through the group and reads as unfair rather than hard.
+static void prv_spawn_wave(void) {
+  const DifficultySpec *spec = &s_difficulty[s_difficulty_sel];
+  const int lanes = (int)fc_rand_range(spec->burst_min, spec->burst_max);
+  bool bomb_spent = false;
+
+  for (int i = 0; i < lanes; i++) {
+    const bool bomb = !bomb_spent && (fc_rand_range(0, 99) < spec->bomb_pct);
+    if (bomb) {
+      bomb_spent = true;
+    }
+    prv_spawn(i, lanes, bomb);
+  }
 }
 
 // Splits along the blade: each half is the 180-degree sector on its own side of
@@ -253,7 +289,7 @@ void game_step(void) {
   }
   if (++s_spawn_timer >= interval) {
     s_spawn_timer = 0;
-    prv_spawn();
+    prv_spawn_wave();
   }
 
   const int32_t floor_y = FP(s_bounds.size.h);
