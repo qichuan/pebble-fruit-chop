@@ -33,6 +33,7 @@ static void prv_debug_start_swipe(FruitType type) {
   }
   const GRect b = layer_get_bounds(s_canvas);
   game_debug_park(type, GPoint(b.size.w / 2, b.size.h / 2));
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "debug swipe target: %s", fruit_profile(type)->name);
 
   // A line through the exact centre, so the parked target is always crossed.
   s_dbg_from = GPoint((b.size.w * 15) / 100, (b.size.h * 65) / 100);
@@ -116,23 +117,48 @@ static void prv_back_click(ClickRecognizerRef recognizer, void *context) {
   window_stack_pop(true);
 }
 
-#if FC_DEBUG_SWIPE
+// Steps the difficulty selection, clamped rather than wrapped so holding a
+// button settles at EASY or HARD instead of cycling past the end.
+static void prv_cycle_difficulty(int delta) {
+  const int next = (int)game_get_difficulty() + delta;
+  if (next >= 0 && next < DIFF_COUNT) {
+    game_set_difficulty((Difficulty)next);
+  }
+}
+
+// UP and DOWN belong to the title screen's difficulty picker. During play they
+// are free, so the debug harness borrows them there and nowhere else.
 static void prv_up_click(ClickRecognizerRef recognizer, void *context) {
+  if (game_get_state() == STATE_TITLE) {
+    prv_cycle_difficulty(-1);
+    layer_mark_dirty(s_canvas);
+    return;
+  }
+#if FC_DEBUG_SWIPE
   prv_debug_start_swipe(FRUIT_BOMB);  // verifies the bomb -> game over path
+#endif
 }
 
 static void prv_down_click(ClickRecognizerRef recognizer, void *context) {
-  prv_debug_start_swipe(FRUIT_DURIAN);
-}
+  if (game_get_state() == STATE_TITLE) {
+    prv_cycle_difficulty(+1);
+    layer_mark_dirty(s_canvas);
+    return;
+  }
+#if FC_DEBUG_SWIPE
+  // Cycles the roster, so every fruit can be cut and screenshotted from the CLI
+  // without a rebuild between them.
+  static int s_dbg_fruit = -1;
+  s_dbg_fruit = (s_dbg_fruit + 1) % FRUIT_BOMB;
+  prv_debug_start_swipe((FruitType)s_dbg_fruit);
 #endif
+}
 
 static void prv_click_config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_SELECT, prv_select_click);
   window_single_click_subscribe(BUTTON_ID_BACK, prv_back_click);
-#if FC_DEBUG_SWIPE
   window_single_click_subscribe(BUTTON_ID_UP, prv_up_click);
   window_single_click_subscribe(BUTTON_ID_DOWN, prv_down_click);
-#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +206,9 @@ static void prv_draw_entities(GContext *ctx) {
       draw_half(ctx, &halves[i]);
     }
   }
+
+  // Juice last, so droplets read as spray in front of the pieces they came off.
+  draw_juice(ctx);
 }
 
 static void prv_update_proc(Layer *layer, GContext *ctx) {

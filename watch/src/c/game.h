@@ -2,21 +2,20 @@
 
 #include <pebble.h>
 #include "fc_config.h"
-
-typedef enum {
-  FRUIT_APPLE = 0,
-  FRUIT_ORANGE,
-  FRUIT_WATERMELON,
-  FRUIT_DURIAN,
-  FRUIT_BOMB,
-  FRUIT_TYPE_COUNT,
-} FruitType;
+#include "fruit.h"
 
 typedef enum {
   STATE_TITLE = 0,
   STATE_PLAYING,
   STATE_GAMEOVER,
 } GameState;
+
+typedef enum {
+  DIFF_EASY = 0,
+  DIFF_NORMAL,
+  DIFF_HARD,
+  DIFF_COUNT,
+} Difficulty;
 
 // A fruit or bomb in flight. Bombs share the pool so spawning and the physics
 // step stay a single code path.
@@ -36,11 +35,28 @@ typedef struct {
   FruitType type;
   int32_t x, y;
   int32_t vx, vy;
-  int32_t angle;    // start of this half's 180-degree sector
+  int32_t angle;       // start of this half's 180-degree sector
+  // The parent fruit's own rotation at the moment of the cut. Kept alongside
+  // `angle` because the two are independent: `angle` says where the blade went,
+  // this says which way the fruit was facing, and draw_half needs both to clip
+  // the right piece off the right silhouette. Both advance by `spin`, so they
+  // stay locked to each other as the half tumbles.
+  int32_t body_angle;
   int32_t spin;
   uint8_t radius;
   uint8_t ttl;      // frames remaining
 } Half;
+
+// A droplet of juice thrown off a cut. It carries its own colour so game.c can
+// spawn it from the fruit's flesh without knowing anything about drawing.
+typedef struct {
+  bool active;
+  int32_t x, y;
+  int32_t vx, vy;
+  uint8_t colour;   // GColor argb byte
+  uint8_t ttl;
+  uint8_t ttl0;     // ttl at spawn, so draw can shrink the droplet as it ages
+} Juice;
 
 void game_init(GRect bounds);
 void game_reset(void);
@@ -55,8 +71,17 @@ void game_set_state(GameState state);
 int game_get_score(void);
 int game_get_lives(void);
 
+// Difficulty is chosen on the title screen and persists across runs, as does a
+// separate high score per difficulty -- a score on easy should not sit in the
+// same column as one on hard.
+Difficulty game_get_difficulty(void);
+void game_set_difficulty(Difficulty d);
+const char *game_difficulty_name(Difficulty d);
+int game_get_high_score(void);
+
 const Fruit *game_fruits(void);
 const Half *game_halves(void);
+const Juice *game_juice(void);
 
 #if FC_DEBUG_SWIPE
 // Parks a stationary target at `at` so the scripted swipe has something

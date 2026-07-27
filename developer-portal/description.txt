@@ -1,0 +1,3 @@
+Swipe across the screen to slice the fruit — just watch out for the bombs. That's all it takes to play Fruit Chop, a fast, fun fruit-slicing game built right for your wrist.
+
+This game needs a touchscreen, so it works only on the Pebble Time 2 and Pebble Round 2. Before playing, enable touch under Settings → Display → Touch.
