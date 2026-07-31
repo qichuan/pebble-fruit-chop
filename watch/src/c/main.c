@@ -6,6 +6,7 @@
 #include "game.h"
 #include "draw.h"
 #include "blade.h"
+#include "sound.h"
 
 static Window *s_window;
 static Layer *s_canvas;
@@ -76,6 +77,7 @@ static void prv_touch_handler(const TouchEvent *event, void *context) {
     if (event->type == TouchEvent_Touchdown) {
       blade_reset();
       game_reset();
+      sound_stop();
       game_set_state(STATE_PLAYING);
     }
     layer_mark_dirty(s_canvas);
@@ -93,6 +95,9 @@ static void prv_select_click(ClickRecognizerRef recognizer, void *context) {
     case STATE_GAMEOVER:
       blade_reset();
       game_reset();
+      // The explosion belongs to the run that just ended; a quick retry should
+      // not have to wait a second for it to finish before the first cut sounds.
+      sound_stop();
       game_set_state(STATE_PLAYING);
       break;
     case STATE_PLAYING:
@@ -117,20 +122,13 @@ static void prv_back_click(ClickRecognizerRef recognizer, void *context) {
   window_stack_pop(true);
 }
 
-// Steps the difficulty selection, clamped rather than wrapped so holding a
-// button settles at EASY or HARD instead of cycling past the end.
-static void prv_cycle_difficulty(int delta) {
-  const int next = (int)game_get_difficulty() + delta;
-  if (next >= 0 && next < DIFF_COUNT) {
-    game_set_difficulty((Difficulty)next);
-  }
-}
-
-// UP and DOWN belong to the title screen's difficulty picker. During play they
-// are free, so the debug harness borrows them there and nowhere else.
+// On the title screen UP picks the difficulty and DOWN toggles sound. Difficulty
+// wraps rather than clamping, because it is down to one button now and clamping
+// would leave no way back to EASY. During play both are free, so the debug
+// harness borrows them there and nowhere else.
 static void prv_up_click(ClickRecognizerRef recognizer, void *context) {
   if (game_get_state() == STATE_TITLE) {
-    prv_cycle_difficulty(-1);
+    game_set_difficulty((Difficulty)(((int)game_get_difficulty() + 1) % DIFF_COUNT));
     layer_mark_dirty(s_canvas);
     return;
   }
@@ -141,7 +139,7 @@ static void prv_up_click(ClickRecognizerRef recognizer, void *context) {
 
 static void prv_down_click(ClickRecognizerRef recognizer, void *context) {
   if (game_get_state() == STATE_TITLE) {
-    prv_cycle_difficulty(+1);
+    sound_set_enabled(!sound_is_enabled());
     layer_mark_dirty(s_canvas);
     return;
   }
@@ -185,6 +183,24 @@ static void prv_timer_callback(void *data) {
     game_step();
     blade_step();
   }
+
+  // Drained here rather than played from the slice itself: touch events arrive
+  // between frames and one stroke can cut several fruits, which would stack
+  // several swishes on top of each other. Draining once a frame collapses them
+  // into one, at a cost of at most a frame of latency.
+  //
+  // Both are drained unconditionally, even though only one sound survives, so a
+  // stroke that takes a fruit and a bomb together does not leave the fruit's cut
+  // sitting in the counter for the next run.
+  const bool bomb_hit = game_take_bomb_hit();
+  const bool fruit_cut = (game_take_cut_events() > 0);
+  if (bomb_hit) {
+    sound_play_explosion();
+  } else if (fruit_cut) {
+    sound_play_slice();
+  }
+  sound_set_fuse(game_has_bomb());
+  sound_update();
 
   layer_mark_dirty(s_canvas);
   s_timer = app_timer_register(FC_FRAME_MS, prv_timer_callback, NULL);
@@ -268,6 +284,7 @@ static void prv_window_disappear(Window *window) {
   if (s_touch_ok) {
     touch_service_unsubscribe();
   }
+  sound_stop();
   if (s_timer) {
     app_timer_cancel(s_timer);
     s_timer = NULL;
@@ -281,6 +298,7 @@ static void prv_window_unload(Window *window) {
 
 static void prv_init(void) {
   srand((unsigned int)time(NULL));
+  sound_init();
 
   s_window = window_create();
   window_set_background_color(s_window, GColorBlack);

@@ -45,11 +45,20 @@ emulator-touching command in a headless environment.
 | `main.c` | Window lifecycle, the AppTimer loop, state machine, buttons, touch subscription, and the debug swipe harness. |
 | `game.c/.h` | Pure simulation: entity pools, physics, spawning, slice resolution, score, lives, juice particles, difficulty table and persisted high scores. No `graphics_*` calls. |
 | `blade.c/.h` | Touch point buffer, speed gating, trail rendering. `blade_feed()` is the single input entry point. |
+| `sound.c/.h` | All audio: the four swish clips and the rotation between them, the looping bomb fuse, the explosion, the one-voice arbitration between them, and the persisted on/off flag. The only file that touches `speaker_*`. |
 | `draw.c/.h` | Procedural fruit/bomb rendering, silhouette clipping for halves, juice, HUD, title and game-over screens. |
 
 The timer callback only mutates state and calls `layer_mark_dirty()`; all drawing
 happens in `prv_update_proc`. Touch events never touch game state directly — they
 only append to the blade buffer, which the slice test then consumes.
+
+Audio follows the same rule as drawing: `game.c` never calls `speaker_*`. It
+counts successful cuts and flags a bomb hit; the timer callback drains those with
+`game_take_cut_events()` / `game_take_bomb_hit()`, holds the fuse with
+`sound_set_fuse(game_has_bomb())`, and ticks `sound_update()`. Draining once a
+frame is what stops one stroke through three fruits stacking three swishes.
+`sound_update()` is not optional bookkeeping — it is what restarts the fuse and
+what feeds the streamed explosion, so it has to run every frame in every state.
 
 ## Key constraints & gotchas
 
@@ -103,6 +112,51 @@ only append to the blade buffer, which the slice test then consumes.
   press are reliable.
 - **The touch sensor draws power while subscribed**, so subscribe in
   `window_appear` and unsubscribe in `window_disappear`, not load/unload.
+- **The Speaker API exists only on emery, gabbro and flint.** Everywhere else
+  `pebble.h` `#define`s every `speaker_*` call to `(0)`, so a portability guard
+  would turn a missing speaker into a silent game rather than a build failure —
+  `sound.c` deliberately calls them unguarded. Two hard limits shape anything
+  audio: `SpeakerPcmFormat` tops out at **16kHz 8-bit signed mono**, and a
+  single `speaker_play_tracks()` call is capped at
+  `SPEAKER_MAX_SAMPLE_BYTES_TOTAL` (16K, i.e. 1.02s at that format). There is no
+  audio resource type either — PCM ships as `raw`, which the SDK embeds
+  byte-for-byte, and is read back with `resource_load`. Convert with
+  `ffmpeg -i in.wav -ac 1 -ar 16000 -acodec pcm_s8 -f s8 out.raw` and check the
+  byte count against the cap; an oversized clip is rejected at runtime, silently.
+- **Sound is muteable system-wide and the app cannot override it.** `sound.c`
+  checks `speaker_is_muted()` before starting anything, which covers both the
+  Sounds & Haptics setting and Quiet Time.
+- **The speaker is one voice.** `speaker_play_tracks()` mixes up to four tracks,
+  but only within a single call — there is no way to add a track to something
+  already playing. So `sound.c` arbitrates by hand: explosion beats swish beats
+  fuse, tracked in `s_voice`. The fuse is the awkward one, being the only
+  sustained sound: it plays with `loop = true` under a 10s note and is stopped by
+  hand when the last bomb leaves, and `sound_update()` polls
+  `speaker_get_status()` once a frame to restart it after a swish has cut it off.
+  Polling rather than `speaker_set_finish_callback()` — a callback that restarts
+  playback gets re-entered by its own `speaker_stop()`.
+- **The fuse needs its own buffer.** A looping sample is still being read long
+  after the call that started it, so a swish loading into the same buffer would
+  tear it. The one-shots can share, since a swish and an explosion never overlap.
+- **A 1.02s cap is short for a sound with a tail, so the explosion is streamed.**
+  The fuse is a 0.95s slice cut from the steady middle of the recording, which
+  loops cleanly because it is broadband hiss, and fits the one-shot path. The
+  explosion has to keep rumbling under the game-over screen, so it goes through
+  `speaker_stream_open` / `_write` / `_close` instead, pumped 4K at a time from
+  `sound_update()`. Pacing is free: `speaker_stream_write` returns short when its
+  buffer is full, so advancing by what it accepted is the whole flow control.
+  Two traps. A stream that is open but unwritten reports `SpeakerStatusIdle`,
+  which looks like a free voice — `sound_update()` checks `s_boom_left` before it
+  believes the status. And `speaker_stream_close()` deliberately lets the buffered
+  tail play out, so `sound_stop()` has to close *and* `speaker_stop()`.
+- **The source explosion never decays** — it is still at -12dB at 4.2s and then
+  just stops. Any length needs a fade; the shipped clip is 2.5s with a 0.6s one.
+- **Bombs are rolled `FC_BOMB_LEAD_FRAMES` before they launch** so the fuse can be
+  heard before the bomb is seen — at ~1.5s of airtime, a fuse lit at launch reads
+  as description rather than warning. `prv_roll_wave` picks the wave and
+  `prv_spawn_wave` launches it later; `game_has_bomb()` counts a rolled-but-unlaunched
+  bomb. Keep the roll per item and stopping at the first hit: rolling once for the
+  whole wave instead would quietly cut HARD's bomb rate from 59% a wave to 26%.
 - **`persist_read_int` cannot tell "holds 0" from "never written",** so the
   stored difficulty is written as `difficulty + 1`. Without that an unwritten
   key reads as 0 and the game defaults to EASY instead of NORMAL.
@@ -129,8 +183,9 @@ CLI. During play: **SELECT** cuts a watermelon, **UP** cuts a bomb (ends the run
 **DOWN** cuts the next fruit in the roster, cycling through all sixteen so each
 can be screenshotted without a rebuild. The parked target's name is logged.
 
-UP and DOWN only do this **during play** — on the title screen they belong to
-the difficulty picker, so the harness never shadows a real control.
+UP and DOWN only do this **during play** — on the title screen UP is the
+difficulty picker and DOWN toggles sound, so the harness never shadows a real
+control.
 
 Two things to know when scripting it. Natural spawns keep falling in the gaps
 between button presses, so a long capture run loses all three lives partway

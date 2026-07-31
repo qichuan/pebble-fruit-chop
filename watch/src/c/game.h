@@ -71,6 +71,23 @@ void game_set_state(GameState state);
 int game_get_score(void);
 int game_get_lives(void);
 
+// Fruits cut since this was last called, then clears. Slicing happens on touch
+// events, which arrive between frames; main.c drains this once a frame so a
+// stroke through three fruits makes one sound rather than three overlapping
+// ones. Keeping it a count rather than a flag leaves room for a combo bonus.
+int game_take_cut_events(void);
+
+// True while a live bomb is in the air, so main.c can hold the fuse burning for
+// exactly as long as one is on screen. False outside STATE_PLAYING: the field
+// stays visible behind the game-over panel, and a bomb frozen there should not
+// still be hissing.
+bool game_has_bomb(void);
+
+// True once, on the frame after a bomb was sliced. Distinguishes the run that
+// ends on a bomb from the one that ends on a third dropped fruit -- only the
+// first should explode.
+bool game_take_bomb_hit(void);
+
 // Difficulty is chosen on the title screen and persists across runs, as does a
 // separate high score per difficulty -- a score on easy should not sit in the
 // same column as one on hard.

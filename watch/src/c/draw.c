@@ -1,5 +1,6 @@
 #include "draw.h"
 #include "fixed.h"
+#include "sound.h"
 
 static inline GColor prv_col(uint8_t argb) {
   return (GColor){ .argb = argb };
@@ -643,10 +644,11 @@ void draw_title(GContext *ctx, GRect bounds, bool touch_ok) {
   const int16_t row_preview = 30;
   const int16_t row_title = 36;
   const int16_t row_diff = 26;
+  const int16_t row_sound = 26;
   const int16_t row_best = 24;
   const int16_t row_hint = 24;
   const int16_t stack_h =
-      row_preview + row_title + row_diff + row_best + row_hint;
+      row_preview + row_title + row_diff + row_sound + row_best + row_hint;
 
   const int16_t step = bounds.size.w / 5;
   int16_t y = (bounds.size.h - stack_h) / 2;
@@ -661,20 +663,31 @@ void draw_title(GContext *ctx, GRect bounds, bool touch_ok) {
                      GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
   y += row_title;
 
-  // Difficulty, flanked by triangles pointing the way the two buttons sit on
-  // the case: UP to the left, DOWN to the right. The arrows are drawn rather
-  // than typed because the Gothic system fonts have no arrow glyphs -- they
-  // come out as tofu boxes.
+  // Difficulty on one row and sound on the next, each marked with the triangle
+  // of the button that changes it, both at the same x so the pair reads as a
+  // column matching how UP sits above DOWN on the case. The arrows are drawn
+  // rather than typed because the Gothic system fonts have no arrow glyphs --
+  // they come out as tofu boxes.
+  const int16_t arrow_x = bounds.size.w / 2 - 58;
+
   graphics_context_set_text_color(ctx, GColorYellow);
   graphics_draw_text(ctx, game_difficulty_name(game_get_difficulty()), bold,
                      GRect(0, y, bounds.size.w, row_diff),
                      GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
   graphics_context_set_fill_color(ctx, GColorYellow);
-  const int16_t arrow_x = 52;
-  const int16_t arrow_y = y + 13;
-  prv_tri(ctx, GPoint(bounds.size.w / 2 - arrow_x, arrow_y), 6, true);
-  prv_tri(ctx, GPoint(bounds.size.w / 2 + arrow_x, arrow_y), 6, false);
+  prv_tri(ctx, GPoint(arrow_x, y + 13), 6, true);
   y += row_diff;
+
+  // Greyed when off, so the state reads before the word does.
+  const bool sound_on = sound_is_enabled();
+  const GColor sound_col = sound_on ? GColorYellow : GColorDarkGray;
+  graphics_context_set_text_color(ctx, sound_col);
+  graphics_draw_text(ctx, sound_on ? "SOUND ON" : "SOUND OFF", bold,
+                     GRect(0, y, bounds.size.w, row_sound),
+                     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+  graphics_context_set_fill_color(ctx, sound_col);
+  prv_tri(ctx, GPoint(arrow_x, y + 13), 6, false);
+  y += row_sound;
 
   char best[24];
   snprintf(best, sizeof(best), "Best %d", game_get_high_score());

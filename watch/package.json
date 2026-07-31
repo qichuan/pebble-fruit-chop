@@ -1,7 +1,7 @@
 {
   "name": "fruit-chop",
   "author": "Zhang Qichuan",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "keywords": [
     "pebble-app",
     "game",
@@ -29,6 +29,36 @@
           "type": "png",
           "name": "IMAGE_MENU_ICON",
           "file": "images/menu_icon.png"
+        },
+        {
+          "type": "raw",
+          "name": "SLICE_1",
+          "file": "sounds/slice_1.raw"
+        },
+        {
+          "type": "raw",
+          "name": "SLICE_2",
+          "file": "sounds/slice_2.raw"
+        },
+        {
+          "type": "raw",
+          "name": "SLICE_3",
+          "file": "sounds/slice_3.raw"
+        },
+        {
+          "type": "raw",
+          "name": "SLICE_4",
+          "file": "sounds/slice_4.raw"
+        },
+        {
+          "type": "raw",
+          "name": "BOMB_FUSE",
+          "file": "sounds/bomb_fuse.raw"
+        },
+        {
+          "type": "raw",
+          "name": "BOMB_BOOM",
+          "file": "sounds/bomb_boom.raw"
         }
       ]
     }

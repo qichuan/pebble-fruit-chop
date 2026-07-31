@@ -61,6 +61,13 @@
 #define FC_SPAWN_INTERVAL_MIN 14
 #define FC_BOMB_CHANCE_PCT 18         // percent of spawns that are bombs
 
+// How far ahead of a wave its contents are rolled, so a bomb can be heard before
+// it is seen. A bomb is only in the air for about a second and a half, which is
+// not long enough for a fuse lit at launch to read as a warning rather than as a
+// description. Capped by the spawn interval itself: at HARD's floor of 11 frames
+// the lead is whatever is left of the gap between waves.
+#define FC_BOMB_LEAD_FRAMES 12        // ~0.4s at 33ms
+
 // Juice. A cut throws a burst of droplets along the blade's normal, which is
 // what sells the slice as wet rather than as a fruit merely coming apart.
 #define FC_JUICE_PER_CUT 14
@@ -84,6 +91,13 @@
 
 #define FC_HALF_TTL 30                // frames a sliced half stays on screen
 #define FC_START_LIVES 3
+
+// Audio levels, 0-100. The clips were recorded hot and the watch speaker is
+// small enough that the top of the range clips rather than getting louder.
+// The fuse sits lower than the rest on purpose: it is the only sustained sound,
+// and a continuous hiss at the level of a one-shot wears on the ear.
+#define FC_SOUND_VOLUME 50
+#define FC_SOUND_FUSE_VOLUME 35
 
 // Debug swipe harness. There is no `pebble emu-touch` and libpebble2 carries no
 // touch packet, so the slice pipeline is otherwise unreachable from the CLI.
