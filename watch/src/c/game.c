@@ -11,6 +11,7 @@ static GameState s_state;
 static int s_score;
 static int s_lives;
 static int s_spawn_timer;
+static int s_cut_events;
 
 // ---------------------------------------------------------------------------
 // Difficulty
@@ -48,7 +49,8 @@ static Difficulty s_difficulty_sel = DIFF_NORMAL;
 
 // Persistent storage. Key 0 remembers the chosen difficulty; the high scores
 // live one key per difficulty above it. persist_read_int returns 0 for a key
-// that was never written, which is the right default for both.
+// that was never written, which is the right default for both. Key 5 is taken
+// by the sound on/off flag in sound.c.
 #define PERSIST_KEY_DIFFICULTY 1
 #define PERSIST_KEY_HIGH_BASE 2
 
@@ -95,6 +97,7 @@ void game_reset(void) {
   s_score = 0;
   s_lives = FC_START_LIVES;
   s_spawn_timer = 0;
+  s_cut_events = 0;
 }
 
 Difficulty game_get_difficulty(void) { return s_difficulty_sel; }
@@ -416,8 +419,15 @@ int game_slice_segment(GPoint p0, GPoint p1) {
     f->active = false;
     s_score++;
     cut++;
+    s_cut_events++;
   }
   return cut;
+}
+
+int game_take_cut_events(void) {
+  const int n = s_cut_events;
+  s_cut_events = 0;
+  return n;
 }
 
 #if FC_DEBUG_SWIPE

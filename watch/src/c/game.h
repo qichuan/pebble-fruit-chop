@@ -71,6 +71,12 @@ void game_set_state(GameState state);
 int game_get_score(void);
 int game_get_lives(void);
 
+// Fruits cut since this was last called, then clears. Slicing happens on touch
+// events, which arrive between frames; main.c drains this once a frame so a
+// stroke through three fruits makes one sound rather than three overlapping
+// ones. Keeping it a count rather than a flag leaves room for a combo bonus.
+int game_take_cut_events(void);
+
 // Difficulty is chosen on the title screen and persists across runs, as does a
 // separate high score per difficulty -- a score on easy should not sit in the
 // same column as one on hard.

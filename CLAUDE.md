@@ -45,11 +45,17 @@ emulator-touching command in a headless environment.
 | `main.c` | Window lifecycle, the AppTimer loop, state machine, buttons, touch subscription, and the debug swipe harness. |
 | `game.c/.h` | Pure simulation: entity pools, physics, spawning, slice resolution, score, lives, juice particles, difficulty table and persisted high scores. No `graphics_*` calls. |
 | `blade.c/.h` | Touch point buffer, speed gating, trail rendering. `blade_feed()` is the single input entry point. |
+| `sound.c/.h` | Slice audio: the four swish clips, the rotation between them, and the persisted on/off flag. The only file that touches `speaker_*`. |
 | `draw.c/.h` | Procedural fruit/bomb rendering, silhouette clipping for halves, juice, HUD, title and game-over screens. |
 
 The timer callback only mutates state and calls `layer_mark_dirty()`; all drawing
 happens in `prv_update_proc`. Touch events never touch game state directly — they
 only append to the blade buffer, which the slice test then consumes.
+
+Audio follows the same rule as drawing: `game.c` never calls `speaker_*`. It
+counts successful cuts, and the timer callback drains that count with
+`game_take_cut_events()` and calls `sound_play_slice()`. Draining once a frame is
+what stops one stroke through three fruits stacking three swishes.
 
 ## Key constraints & gotchas
 
@@ -103,6 +109,20 @@ only append to the blade buffer, which the slice test then consumes.
   press are reliable.
 - **The touch sensor draws power while subscribed**, so subscribe in
   `window_appear` and unsubscribe in `window_disappear`, not load/unload.
+- **The Speaker API exists only on emery, gabbro and flint.** Everywhere else
+  `pebble.h` `#define`s every `speaker_*` call to `(0)`, so a portability guard
+  would turn a missing speaker into a silent game rather than a build failure —
+  `sound.c` deliberately calls them unguarded. Two hard limits shape anything
+  audio: `SpeakerPcmFormat` tops out at **16kHz 8-bit signed mono**, and a
+  single `speaker_play_tracks()` call is capped at
+  `SPEAKER_MAX_SAMPLE_BYTES_TOTAL` (16K, i.e. 1.02s at that format). There is no
+  audio resource type either — PCM ships as `raw`, which the SDK embeds
+  byte-for-byte, and is read back with `resource_load`. Convert with
+  `ffmpeg -i in.wav -ac 1 -ar 16000 -acodec pcm_s8 -f s8 out.raw` and check the
+  byte count against the cap; an oversized clip is rejected at runtime, silently.
+- **Sound is muteable system-wide and the app cannot override it.**
+  `sound_play_slice()` checks `speaker_is_muted()`, which covers both the
+  Sounds & Haptics setting and Quiet Time.
 - **`persist_read_int` cannot tell "holds 0" from "never written",** so the
   stored difficulty is written as `difficulty + 1`. Without that an unwritten
   key reads as 0 and the game defaults to EASY instead of NORMAL.
@@ -129,8 +149,9 @@ CLI. During play: **SELECT** cuts a watermelon, **UP** cuts a bomb (ends the run
 **DOWN** cuts the next fruit in the roster, cycling through all sixteen so each
 can be screenshotted without a rebuild. The parked target's name is logged.
 
-UP and DOWN only do this **during play** — on the title screen they belong to
-the difficulty picker, so the harness never shadows a real control.
+UP and DOWN only do this **during play** — on the title screen UP is the
+difficulty picker and DOWN toggles sound, so the harness never shadows a real
+control.
 
 Two things to know when scripting it. Natural spawns keep falling in the gaps
 between button presses, so a long capture run loses all three lives partway

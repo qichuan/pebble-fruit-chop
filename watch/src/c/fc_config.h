@@ -85,6 +85,10 @@
 #define FC_HALF_TTL 30                // frames a sliced half stays on screen
 #define FC_START_LIVES 3
 
+// Slice audio, 0-100. The swishes were recorded hot, and the watch speaker is
+// small enough that the top of the range clips rather than getting louder.
+#define FC_SOUND_VOLUME 80
+
 // Debug swipe harness. There is no `pebble emu-touch` and libpebble2 carries no
 // touch packet, so the slice pipeline is otherwise unreachable from the CLI.
 // With this set, the UP button fires a synthetic swipe through the same
