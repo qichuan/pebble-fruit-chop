@@ -77,6 +77,7 @@ static void prv_touch_handler(const TouchEvent *event, void *context) {
     if (event->type == TouchEvent_Touchdown) {
       blade_reset();
       game_reset();
+      sound_stop();
       game_set_state(STATE_PLAYING);
     }
     layer_mark_dirty(s_canvas);
@@ -94,6 +95,9 @@ static void prv_select_click(ClickRecognizerRef recognizer, void *context) {
     case STATE_GAMEOVER:
       blade_reset();
       game_reset();
+      // The explosion belongs to the run that just ended; a quick retry should
+      // not have to wait a second for it to finish before the first cut sounds.
+      sound_stop();
       game_set_state(STATE_PLAYING);
       break;
     case STATE_PLAYING:
@@ -184,9 +188,19 @@ static void prv_timer_callback(void *data) {
   // between frames and one stroke can cut several fruits, which would stack
   // several swishes on top of each other. Draining once a frame collapses them
   // into one, at a cost of at most a frame of latency.
-  if (game_take_cut_events() > 0) {
+  //
+  // Both are drained unconditionally, even though only one sound survives, so a
+  // stroke that takes a fruit and a bomb together does not leave the fruit's cut
+  // sitting in the counter for the next run.
+  const bool bomb_hit = game_take_bomb_hit();
+  const bool fruit_cut = (game_take_cut_events() > 0);
+  if (bomb_hit) {
+    sound_play_explosion();
+  } else if (fruit_cut) {
     sound_play_slice();
   }
+  sound_set_fuse(game_has_bomb());
+  sound_update();
 
   layer_mark_dirty(s_canvas);
   s_timer = app_timer_register(FC_FRAME_MS, prv_timer_callback, NULL);

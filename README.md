@@ -25,8 +25,10 @@ where the scores are.
 Slice a bomb and the run ends on the spot. Drop three fruits and it is over too.
 
 Every cut lands with a blade swish through the watch speaker, four recordings
-played in rotation so no two strokes sound the same. DOWN on the title screen
-turns them off.
+played in rotation so no two strokes sound the same. A bomb lights its fuse a
+moment before it clears the bottom of the screen, so you hear it coming before
+you see it, and it takes the run out with a bang that rumbles on under the game
+over screen. DOWN on the title screen turns all of it off.
 
 Every fruit is drawn procedurally on the watch — no image resources — so the
 fruit stays sharp at any size and the code, sound aside, is a few kilobytes.
@@ -88,7 +90,7 @@ watch/               the game (all pebble commands run from here)
     game.c/.h        simulation, difficulty, scores (no drawing)
     draw.c/.h        procedural rendering and screens
     blade.c/.h       touch buffer and trail
-    sound.c/.h       slice audio and the sound on/off setting
+    sound.c/.h       slice, fuse and explosion audio; the sound on/off setting
     main.c           window lifecycle, loop, input
 developer-portal/    app-store assets: banner, icons, screenshots, description
 ```

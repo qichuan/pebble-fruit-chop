@@ -12,6 +12,14 @@ static int s_score;
 static int s_lives;
 static int s_spawn_timer;
 static int s_cut_events;
+static bool s_bomb_hit;
+
+// The next wave, rolled FC_BOMB_LEAD_FRAMES before it launches so the fuse has
+// somewhere to burn while the bomb is still below the screen. `s_wave_rolled`
+// says the pending values are live; `s_wave_bomb_lane` is -1 for a clean wave.
+static bool s_wave_rolled;
+static uint8_t s_wave_lanes = 1;
+static int8_t s_wave_bomb_lane = -1;
 
 // ---------------------------------------------------------------------------
 // Difficulty
@@ -98,6 +106,10 @@ void game_reset(void) {
   s_lives = FC_START_LIVES;
   s_spawn_timer = 0;
   s_cut_events = 0;
+  s_bomb_hit = false;
+  s_wave_rolled = false;
+  s_wave_lanes = 1;
+  s_wave_bomb_lane = -1;
 }
 
 Difficulty game_get_difficulty(void) { return s_difficulty_sel; }
@@ -232,22 +244,37 @@ static void prv_spawn(int lane, int lanes, bool is_bomb) {
   f->active = true;
 }
 
-// A wave: several fruit launched on the same frame, spread across the width.
+// Decides what the next wave holds, without launching any of it. Split out from
+// the launch so game_has_bomb() can answer yes while the bomb is still pending
+// and the fuse can be lit ahead of it.
+//
 // At most one bomb per wave, however many items it holds -- rolling each item
 // independently would sometimes throw up two or three bombs at once, which
 // leaves no safe stroke through the group and reads as unfair rather than hard.
-static void prv_spawn_wave(void) {
+// The roll is per item and stops at the first hit, which is what the old
+// bomb_spent loop did; keeping that exact shape matters, because rolling once
+// for the whole wave instead would quietly cut HARD's bomb rate from 59% a wave
+// to 26%.
+static void prv_roll_wave(void) {
   const DifficultySpec *spec = &s_difficulty[s_difficulty_sel];
-  const int lanes = (int)fc_rand_range(spec->burst_min, spec->burst_max);
-  bool bomb_spent = false;
-
-  for (int i = 0; i < lanes; i++) {
-    const bool bomb = !bomb_spent && (fc_rand_range(0, 99) < spec->bomb_pct);
-    if (bomb) {
-      bomb_spent = true;
+  s_wave_lanes = (uint8_t)fc_rand_range(spec->burst_min, spec->burst_max);
+  s_wave_bomb_lane = -1;
+  for (int i = 0; i < s_wave_lanes; i++) {
+    if (fc_rand_range(0, 99) < spec->bomb_pct) {
+      s_wave_bomb_lane = (int8_t)i;
+      break;
     }
-    prv_spawn(i, lanes, bomb);
   }
+  s_wave_rolled = true;
+}
+
+// Launches the wave that prv_roll_wave picked: several fruit on the same frame,
+// spread across the width.
+static void prv_spawn_wave(void) {
+  for (int i = 0; i < s_wave_lanes; i++) {
+    prv_spawn(i, s_wave_lanes, i == s_wave_bomb_lane);
+  }
+  s_wave_rolled = false;
 }
 
 // Splits along the blade: each half is the 180-degree sector on its own side of
@@ -290,7 +317,14 @@ void game_step(void) {
   if (interval < spec->interval_min) {
     interval = spec->interval_min;
   }
-  if (++s_spawn_timer >= interval) {
+  s_spawn_timer++;
+  // Roll the wave before launching it, so a bomb in it can be heard coming.
+  // The subtraction can go negative at HARD's spawn floor, which just means the
+  // wave is decided the moment the previous one leaves.
+  if (!s_wave_rolled && s_spawn_timer >= interval - FC_BOMB_LEAD_FRAMES) {
+    prv_roll_wave();
+  }
+  if (s_spawn_timer >= interval) {
     s_spawn_timer = 0;
     prv_spawn_wave();
   }
@@ -407,6 +441,7 @@ int game_slice_segment(GPoint p0, GPoint p1) {
     if (f->type == FRUIT_BOMB) {
       f->active = false;
       s_state = STATE_GAMEOVER;
+      s_bomb_hit = true;
       prv_record_score();
       return cut;
     }
@@ -428,6 +463,30 @@ int game_take_cut_events(void) {
   const int n = s_cut_events;
   s_cut_events = 0;
   return n;
+}
+
+bool game_has_bomb(void) {
+  if (s_state != STATE_PLAYING) {
+    return false;
+  }
+  // A bomb that is rolled but not yet launched counts, which is the whole point
+  // of rolling early: the fuse starts here and runs straight into the one the
+  // pool scan below keeps burning once the bomb is actually in the air.
+  if (s_wave_rolled && s_wave_bomb_lane >= 0) {
+    return true;
+  }
+  for (int i = 0; i < MAX_FRUITS; i++) {
+    if (s_fruits[i].active && s_fruits[i].type == FRUIT_BOMB) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool game_take_bomb_hit(void) {
+  const bool hit = s_bomb_hit;
+  s_bomb_hit = false;
+  return hit;
 }
 
 #if FC_DEBUG_SWIPE
