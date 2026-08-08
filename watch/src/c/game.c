@@ -13,6 +13,7 @@ static int s_lives;
 static int s_spawn_timer;
 static int s_cut_events;
 static bool s_bomb_hit;
+static bool s_run_over;
 
 // The next wave, rolled FC_BOMB_LEAD_FRAMES before it launches so the fuse has
 // somewhere to burn while the bomb is still below the screen. `s_wave_rolled`
@@ -107,6 +108,7 @@ void game_reset(void) {
   s_spawn_timer = 0;
   s_cut_events = 0;
   s_bomb_hit = false;
+  s_run_over = false;
   s_wave_rolled = false;
   s_wave_lanes = 1;
   s_wave_bomb_lane = -1;
@@ -133,6 +135,9 @@ static void prv_record_score(void) {
     s_high[s_difficulty_sel] = s_score;
     persist_write_int(PERSIST_KEY_HIGH_BASE + s_difficulty_sel, (int32_t)s_score);
   }
+  // Raised after the high score is updated, so whoever drains it reports a best
+  // that already includes the run that just ended.
+  s_run_over = true;
 }
 
 static Fruit *prv_free_fruit(void) {
@@ -487,6 +492,12 @@ bool game_take_bomb_hit(void) {
   const bool hit = s_bomb_hit;
   s_bomb_hit = false;
   return hit;
+}
+
+bool game_take_run_over(void) {
+  const bool over = s_run_over;
+  s_run_over = false;
+  return over;
 }
 
 #if FC_DEBUG_SWIPE

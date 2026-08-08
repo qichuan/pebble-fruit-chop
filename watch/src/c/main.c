@@ -7,6 +7,7 @@
 #include "draw.h"
 #include "blade.h"
 #include "sound.h"
+#include "share.h"
 
 static Window *s_window;
 static Layer *s_canvas;
@@ -202,6 +203,14 @@ static void prv_timer_callback(void *data) {
   sound_set_fuse(game_has_bomb());
   sound_update();
 
+  // Drained the same way, and for the same reason: the run can end on a touch
+  // event between frames, and the send belongs on the frame boundary rather than
+  // inside the slice. Once per run, and the phone side is free to be absent.
+  if (game_take_run_over()) {
+    share_report_run(game_get_score(), (int)game_get_difficulty(),
+                     game_get_high_score());
+  }
+
   layer_mark_dirty(s_canvas);
   s_timer = app_timer_register(FC_FRAME_MS, prv_timer_callback, NULL);
 }
@@ -299,6 +308,7 @@ static void prv_window_unload(Window *window) {
 static void prv_init(void) {
   srand((unsigned int)time(NULL));
   sound_init();
+  share_init();
 
   s_window = window_create();
   window_set_background_color(s_window, GColorBlack);

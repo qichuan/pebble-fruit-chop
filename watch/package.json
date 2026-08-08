@@ -1,7 +1,7 @@
 {
   "name": "fruit-chop",
   "author": "Zhang Qichuan",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "keywords": [
     "pebble-app",
     "game",
@@ -15,9 +15,17 @@
     "uuid": "1f031b67-dd55-4345-a883-0f5a569a7d30",
     "sdkVersion": "3",
     "enableMultiJS": true,
+    "capabilities": [
+      "configurable"
+    ],
     "targetPlatforms": [
       "emery",
       "gabbro"
+    ],
+    "messageKeys": [
+      "SCORE",
+      "DIFF",
+      "BEST"
     ],
     "watchapp": {
       "watchface": false

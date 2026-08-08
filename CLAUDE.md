@@ -8,12 +8,15 @@ dropping three fruits.
 
 | Directory | Language | Role |
 | --- | --- | --- |
-| `watch/` | C (Pebble SDK 4.17) | The entire game. All `pebble` commands run from here. |
+| `watch/` | C (Pebble SDK 4.17) | The game. All `pebble` commands run from here. |
+| `watch/src/pkjs/` | JS (ES5) | Phone side. Nothing but the score share — no network. |
+| `docs/` | HTML | The share card, served by GitHub Pages. |
 | `developer-portal/` | assets | App-store screenshots and icons. |
 
-There is no server and no PebbleKit JS — the game is fully offline, so there is no
-`src/pkjs/` and no `messageKeys`. Data flow is just: touch → blade buffer →
-slice test → entity pools → framebuffer.
+There is no server. The game itself is fully offline: data flow is just touch →
+blade buffer → slice test → entity pools → framebuffer, and every rule in the
+game runs on the watch. The phone is involved in exactly one thing, sharing a
+score — see below.
 
 ## Commands
 
@@ -26,6 +29,7 @@ pebble install --emulator emery                # or --emulator gabbro
 pebble screenshot --emulator emery --no-open shot.png
 pebble emu-button --emulator emery click select
 pebble logs --emulator emery
+pebble emu-app-config --emulator emery --file ../docs/index.html   # the share card
 pebble kill
 ```
 
@@ -45,6 +49,7 @@ emulator-touching command in a headless environment.
 | `main.c` | Window lifecycle, the AppTimer loop, state machine, buttons, touch subscription, and the debug swipe harness. |
 | `game.c/.h` | Pure simulation: entity pools, physics, spawning, slice resolution, score, lives, juice particles, difficulty table and persisted high scores. No `graphics_*` calls. |
 | `blade.c/.h` | Touch point buffer, speed gating, trail rendering. `blade_feed()` is the single input entry point. |
+| `share.c/.h` | AppMessage. One outbound message per finished run, and nothing else. The only file that touches `app_message_*`. |
 | `sound.c/.h` | All audio: the four swish clips and the rotation between them, the looping bomb fuse, the explosion, the one-voice arbitration between them, and the persisted on/off flag. The only file that touches `speaker_*`. |
 | `draw.c/.h` | Procedural fruit/bomb rendering, silhouette clipping for halves, juice, HUD, title and game-over screens. |
 
@@ -59,6 +64,45 @@ counts successful cuts and flags a bomb hit; the timer callback drains those wit
 frame is what stops one stroke through three fruits stacking three swishes.
 `sound_update()` is not optional bookkeeping — it is what restarts the fuse and
 what feeds the streamed explosion, so it has to run every frame in every state.
+
+## Score sharing
+
+The one thing the phone does. It follows the same drain-once-a-frame rule as
+sound: `game.c` raises `s_run_over` inside `prv_record_score()` — already the
+single transition into game over, and raised *after* the high score is written so
+the reported best includes the run — and `prv_timer_callback` drains it with
+`game_take_run_over()` and calls `share_report_run()`. One AppMessage per run,
+carrying `SCORE`, `DIFF`, `BEST`.
+
+`src/pkjs/index.js` stores that in `localStorage` and does nothing else until
+`showConfiguration` fires, when it opens the GitHub Pages card with the run in
+the query string. `docs/index.html` redraws the score as a 1200x630 `<canvas>`
+and offers the share sheet, a saveable PNG, prefilled network links and a copy
+button, in that order of preference.
+
+Things that are easy to get wrong here:
+
+- **The watch cannot open anything on the phone.** There is no share API in the
+  SDK and no way to make the phone show UI on demand: `Pebble.openURL()` is only
+  dependable inside the `showConfiguration` handler, i.e. when the player taps
+  the settings gear next to Fruit Chop in the Pebble app. That is why the flow is
+  store-now-show-later, and why `draw_gameover` spends a line pointing at the
+  gear. Do not try to make the webview appear at game over.
+- **`capabilities: ["configurable"]` in `package.json` is what puts the gear
+  there.** Drop it and the share card becomes unreachable, with no other symptom.
+- Sending is best effort and must stay that way — no phone, no JS or a busy
+  outbox are all logged and dropped. Nothing in `share.c` may block or retry:
+  it is called from the frame timer.
+- The hint line is drawn only when `connection_service_peek_pebble_app_connection()`
+  is true, and the game-over backing plate grows by 16px when it is. Both screens
+  need a look after touching that panel; the round one is the tight fit.
+- The share page is ES5 with no build step, same as the sibling repos' settings
+  pages, and **GitHub Pages must be enabled on this repo (`main`, `/docs`)** or
+  the gear opens a 404. Which rung of the share chain the Pebble app's webview
+  actually reaches varies by phone, so every rung has to work on its own.
+- The score in the card is only as fresh as the last run the phone received. A
+  run played out of Bluetooth range never arrives, which is why the page prints
+  how old the score is and has a no-score state at all.
 
 ## Key constraints & gotchas
 

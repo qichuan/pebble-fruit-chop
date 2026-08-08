@@ -88,6 +88,11 @@ bool game_has_bomb(void);
 // first should explode.
 bool game_take_bomb_hit(void);
 
+// True once, on the frame a run ended, whichever way it ended. Drained by main.c
+// to hand the result to share.c. Raised after the high score has been updated,
+// so game_get_high_score() already accounts for the run being reported.
+bool game_take_run_over(void);
+
 // Difficulty is chosen on the title screen and persists across runs, as does a
 // separate high score per difficulty -- a score on easy should not sit in the
 // same column as one on hard.

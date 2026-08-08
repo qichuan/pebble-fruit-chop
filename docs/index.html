@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fruit Chop — Share your score</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #0d0d0f; color: #fff;
+    margin: 0; padding: 20px 16px 40px; max-width: 460px; margin-inline: auto;
+    -webkit-text-size-adjust: 100%;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #9b9ba3; font-size: 14px; margin: 0 0 18px; }
+  #card { width: 100%; border-radius: 14px; display: block; margin-bottom: 16px; }
+  canvas { display: none; }
+  button, a.btn {
+    display: block; width: 100%; padding: 14px 16px; margin-bottom: 10px;
+    font-size: 16px; font-weight: 600; font-family: inherit;
+    border: 0; border-radius: 12px; text-align: center; text-decoration: none;
+    background: #24242b; color: #fff; cursor: pointer; -webkit-appearance: none;
+  }
+  button.primary { background: #e2483d; }
+  .row { display: flex; gap: 10px; }
+  .row a.btn, .row button { flex: 1; }
+  h2 { font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+       color: #7c7c86; margin: 22px 0 10px; }
+  .quiet { background: none; border: 1px solid #33333c; color: #b9b9c2; }
+  .note { color: #7c7c86; font-size: 13px; line-height: 1.5; margin: 14px 0 0; }
+  .empty { background: #17171c; border-radius: 14px; padding: 22px 18px;
+           margin-bottom: 16px; }
+  .empty p { margin: 0; color: #b9b9c2; font-size: 15px; line-height: 1.5; }
+  .empty b { color: #fff; }
+</style>
+</head>
+<body>
+
+<h1>Fruit Chop</h1>
+<p class="sub" id="sub">Share your score</p>
+
+<div id="empty" class="empty" style="display:none">
+  <p><b>No score yet.</b> Play a run on your watch with your phone nearby, then
+  come back to this page — the card is built from the last run your phone
+  received.</p>
+</div>
+
+<img id="card" alt="Fruit Chop score card" style="display:none">
+<canvas id="draw" width="1200" height="630"></canvas>
+
+<div id="actions" style="display:none">
+  <button id="share" class="primary" style="display:none">Share…</button>
+  <a id="save" class="btn" download="fruit-chop-score.png">Save image</a>
+  <h2>Post it</h2>
+  <div class="row">
+    <a class="btn" id="x" target="_blank" rel="noopener">X</a>
+    <a class="btn" id="wa" target="_blank" rel="noopener">WhatsApp</a>
+    <a class="btn" id="th" target="_blank" rel="noopener">Threads</a>
+  </div>
+  <button id="copy" class="quiet">Copy text</button>
+  <p class="note" id="hint">On some phones the buttons above are blocked inside
+  this window — press and hold the card to save it, then attach it wherever you
+  like.</p>
+</div>
+
+<button id="done" class="quiet" style="margin-top:24px">Done</button>
+
+<script>
+(function () {
+  'use strict';
+
+  var STORE_URL = 'https://apps.repebble.com/82fc69b2d0964fe28e2520c3';
+
+  // ---- query string ------------------------------------------------------
+  function qs(name) {
+    var m = new RegExp('[?&]' + name + '=([^&]*)').exec(window.location.search);
+    return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : '';
+  }
+
+  var score = parseInt(qs('score'), 10);
+  var diff = (qs('diff') || 'NORMAL').toUpperCase();
+  var best = parseInt(qs('best'), 10);
+  var ts = parseInt(qs('ts'), 10);
+  var hasRun = !isNaN(score);
+
+  if (!hasRun) {
+    document.getElementById('empty').style.display = 'block';
+    document.getElementById('sub').innerHTML = 'Share your score';
+  } else {
+    document.getElementById('actions').style.display = 'block';
+    document.getElementById('card').style.display = 'block';
+    document.getElementById('sub').innerHTML = ago(ts);
+  }
+  if (isNaN(best) || best < score) { best = score; }
+
+  function ago(t) {
+    if (isNaN(t)) { return 'Share your score'; }
+    var mins = Math.floor((Date.now() / 1000 - t) / 60);
+    if (mins < 2) { return 'Just now'; }
+    if (mins < 60) { return mins + ' minutes ago'; }
+    var hrs = Math.floor(mins / 60);
+    if (hrs < 24) { return hrs === 1 ? 'An hour ago' : hrs + ' hours ago'; }
+    var days = Math.floor(hrs / 24);
+    return days === 1 ? 'Yesterday' : days + ' days ago';
+  }
+
+  // ---- the card ----------------------------------------------------------
+  // Redrawn here rather than captured from the watch: a Pebble app has no way
+  // to hand its framebuffer to the phone, and a 200x228 screenshot would be a
+  // poor social image anyway. The palette follows the game's own fruit.
+  var cv = document.getElementById('draw');
+  var g = cv.getContext('2d');
+  var W = cv.width, H = cv.height;
+
+  function circle(x, y, r, fill) {
+    g.beginPath();
+    g.arc(x, y, r, 0, Math.PI * 2);
+    g.fillStyle = fill;
+    g.fill();
+  }
+
+  // A cut fruit: rind ring, flesh inside, flat face along `angle`.
+  function halfFruit(x, y, r, angle, rind, flesh, seed) {
+    g.save();
+    g.translate(x, y);
+    g.rotate(angle);
+    g.beginPath();
+    g.arc(0, 0, r, Math.PI, 0);
+    g.closePath();
+    g.fillStyle = rind;
+    g.fill();
+    g.beginPath();
+    g.arc(0, 0, r * 0.82, Math.PI, 0);
+    g.closePath();
+    g.fillStyle = flesh;
+    g.fill();
+    if (seed) {
+      for (var i = 0; i < 5; i++) {
+        var a = Math.PI + (Math.PI * (i + 1)) / 6;
+        circle(Math.cos(a) * r * 0.5, Math.sin(a) * r * 0.5, r * 0.07, seed);
+      }
+    }
+    g.restore();
+  }
+
+  function drawCard() {
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, W, H);
+
+    // Blade trail, the same left-low to right-high stroke the game's own
+    // screenshots use.
+    g.save();
+    g.strokeStyle = 'rgba(255,255,255,0.10)';
+    g.lineWidth = 26;
+    g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(-40, H * 0.86);
+    g.lineTo(W + 40, H * 0.18);
+    g.stroke();
+    g.restore();
+
+    halfFruit(150, 500, 95, -0.5, '#1f7a3a', '#e2483d', '#111');   // watermelon
+    halfFruit(1055, 165, 78, 2.4, '#d99a1a', '#f2c14b', null);     // orange
+    circle(1090, 470, 46, '#e2483d');                              // apple
+    circle(1090, 470 - 40, 8, '#5b3a1a');
+    circle(120, 150, 40, '#7ac943');                               // lime
+    circle(120, 150, 26, '#a8e063');
+
+    g.textAlign = 'center';
+
+    g.fillStyle = '#7c7c86';
+    g.font = 'bold 34px -apple-system, Helvetica, Arial, sans-serif';
+    g.fillText('F R U I T   C H O P', W / 2, 108);
+
+    g.fillStyle = '#fff';
+    g.font = 'bold 200px -apple-system, Helvetica, Arial, sans-serif';
+    g.fillText(String(score), W / 2, 340);
+
+    g.fillStyle = '#9b9ba3';
+    g.font = 'bold 34px -apple-system, Helvetica, Arial, sans-serif';
+    g.fillText('POINTS  ·  ' + diff, W / 2, 392);
+
+    g.fillStyle = score >= best ? '#f2c14b' : '#7c7c86';
+    g.font = 'bold 30px -apple-system, Helvetica, Arial, sans-serif';
+    g.fillText(score >= best ? 'NEW PERSONAL BEST' : 'BEST  ' + best, W / 2, 448);
+
+    g.fillStyle = '#5c5c66';
+    g.font = '28px -apple-system, Helvetica, Arial, sans-serif';
+    g.fillText('apps.repebble.com  ·  Pebble Time 2 & Pebble Round 2', W / 2, 560);
+  }
+
+  var dataUrl = '';
+  if (hasRun) {
+    drawCard();
+    dataUrl = cv.toDataURL('image/png');
+    document.getElementById('card').src = dataUrl;
+    document.getElementById('save').href = dataUrl;
+  }
+
+  // ---- sharing -----------------------------------------------------------
+  var text = 'Scored ' + score + ' on Fruit Chop (' + diff + ') on my Pebble.';
+  var full = text + ' ' + STORE_URL;
+
+  document.getElementById('x').href =
+    'https://x.com/intent/post?text=' + encodeURIComponent(text) +
+    '&url=' + encodeURIComponent(STORE_URL);
+  document.getElementById('wa').href =
+    'https://wa.me/?text=' + encodeURIComponent(full);
+  document.getElementById('th').href =
+    'https://www.threads.net/intent/post?text=' + encodeURIComponent(full);
+
+  // Feature-detected in order: the OS share sheet with the image, the share
+  // sheet with text alone, and failing both the links above plus a long-press
+  // on the card. Each rung is a real fallback -- the webview this page opens in
+  // is not a full browser, and which rung it reaches varies by phone.
+  function dataUrlToBlob(url) {
+    var parts = url.split(',');
+    var bin = atob(parts[1]);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) { bytes[i] = bin.charCodeAt(i); }
+    return new Blob([bytes], { type: 'image/png' });
+  }
+
+  var shareBtn = document.getElementById('share');
+  if (hasRun && navigator.share) {
+    var file = null;
+    try {
+      file = new File([dataUrlToBlob(dataUrl)], 'fruit-chop-score.png',
+                      { type: 'image/png' });
+    } catch (e) { file = null; }
+
+    var withFile = !!(file && navigator.canShare &&
+                      navigator.canShare({ files: [file] }));
+    shareBtn.style.display = 'block';
+    shareBtn.onclick = function () {
+      var payload = withFile
+        ? { files: [file], text: text, url: STORE_URL }
+        : { text: text, url: STORE_URL };
+      var p = navigator.share(payload);
+      if (p && p['catch']) { p['catch'](function () {}); }
+    };
+    if (withFile) {
+      document.getElementById('hint').style.display = 'none';
+    }
+  }
+
+  document.getElementById('copy').onclick = function () {
+    var btn = this;
+    function done() { btn.innerHTML = 'Copied'; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(full).then(done, fallback);
+    } else {
+      fallback();
+    }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = full;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) { /* nothing */ }
+      document.body.removeChild(ta);
+    }
+  };
+
+  // Hands control back to the Pebble app the same way a settings page would.
+  document.getElementById('done').onclick = function () {
+    document.location = 'pebblejs://close#';
+  };
+})();
+</script>
+
+</body>
+</html>

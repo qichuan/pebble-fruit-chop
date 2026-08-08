@@ -720,8 +720,14 @@ void draw_gameover(GContext *ctx, GRect bounds) {
   // The field stays visible behind the panel so the fatal moment is legible,
   // but at the current fruit size a watermelon fills most of the screen and the
   // text was disappearing into it. A solid backing plate keeps both readable.
+  // The share hint only earns its line when there is a phone to share from: the
+  // score is handed over by AppMessage as the run ends, and with nothing on the
+  // other end the settings page would open on an empty card.
+  const bool can_share = connection_service_peek_pebble_app_connection();
+
   graphics_context_set_fill_color(ctx, GColorBlack);
-  graphics_fill_rect(ctx, GRect(0, bounds.size.h / 2 - 52, bounds.size.w, 124),
+  graphics_fill_rect(ctx, GRect(0, bounds.size.h / 2 - 52, bounds.size.w,
+                                can_share ? 140 : 124),
                      6, GCornersAll);
 
   prv_draw_centred(ctx, bounds, "GAME OVER", score, best);
@@ -731,4 +737,12 @@ void draw_gameover(GContext *ctx, GRect bounds) {
   graphics_draw_text(ctx, "SELECT to retry", small,
                      GRect(0, bounds.size.h / 2 + 46, bounds.size.w, 24),
                      GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+
+  if (can_share) {
+    graphics_context_set_text_color(ctx, GColorLightGray);
+    graphics_draw_text(ctx, "Share: Pebble app > gear",
+                       fonts_get_system_font(FONT_KEY_GOTHIC_14),
+                       GRect(0, bounds.size.h / 2 + 68, bounds.size.w, 18),
+                       GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+  }
 }
