@@ -100,6 +100,25 @@ Things that are easy to get wrong here:
   pages, and **GitHub Pages must be enabled on this repo (`main`, `/docs`)** or
   the gear opens a 404. Which rung of the share chain the Pebble app's webview
   actually reaches varies by phone, so every rung has to work on its own.
+- **Only the share sheet can carry the image.** The X / WhatsApp / Threads
+  buttons are intent URLs, and a URL cannot take an attachment on any phone —
+  they post the score and the store link as text and nothing else. This reads as
+  a bug the moment the buttons sit next to a picture, so the page names the
+  limit in the copy and keeps `navigator.share` as the primary action. Do not
+  add a network button and imply it takes the card.
+- **`navigator.canShare` may be absent where files still work,** so the page
+  attempts the file share whenever one could be built and treats the rejection
+  as the answer, rather than refusing up front. A retry inside the `catch` is
+  pointless: the tap that authorised the share is spent, so the failure reveals
+  the fallback for the *next* tap instead. `AbortError` is a cancelled sheet,
+  not a refusal.
+- **`<a download>` is a dead button on iOS.** WKWebView blocks top-level
+  navigation to a `data:` URL, so on iPhone the save link is defused and points
+  at the long-press menu instead — which is why `-webkit-touch-callout` must
+  stay `default` on the card.
+- The `<details>` panel at the foot of the page prints which rungs the webview
+  offered. It is the only way to tell from a bug report which path was taken;
+  keep it in.
 - The score in the card is only as fresh as the last run the phone received. A
   run played out of Bluetooth range never arrives, which is why the page prints
   how old the score is and has a no-score state at all.

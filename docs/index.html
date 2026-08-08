@@ -14,7 +14,10 @@
   }
   h1 { font-size: 20px; margin: 0 0 4px; }
   .sub { color: #9b9ba3; font-size: 14px; margin: 0 0 18px; }
-  #card { width: 100%; border-radius: 14px; display: block; margin-bottom: 16px; }
+  /* The long-press "Save to Photos" menu is the one save path that works in
+     every webview, so the callout must not be suppressed. */
+  #card { width: 100%; border-radius: 14px; display: block; margin-bottom: 8px;
+          -webkit-touch-callout: default; }
   canvas { display: none; }
   button, a.btn {
     display: block; width: 100%; padding: 14px 16px; margin-bottom: 10px;
@@ -29,6 +32,14 @@
        color: #7c7c86; margin: 22px 0 10px; }
   .quiet { background: none; border: 1px solid #33333c; color: #b9b9c2; }
   .note { color: #7c7c86; font-size: 13px; line-height: 1.5; margin: 14px 0 0; }
+  .note b { color: #b9b9c2; }
+  .warn { background: #2a1d16; border-radius: 10px; padding: 12px 14px;
+          margin: 0 0 12px; color: #d9b48a; }
+  .warn b { color: #f0c48a; }
+  #cardcap { margin: 0 0 16px; text-align: center; }
+  #diag { margin-top: 22px; }
+  #diag summary { color: #7c7c86; font-size: 13px; cursor: pointer; }
+  #caps { word-break: break-word; }
   .empty { background: #17171c; border-radius: 14px; padding: 22px 18px;
            margin-bottom: 16px; }
   .empty p { margin: 0; color: #b9b9c2; font-size: 15px; line-height: 1.5; }
@@ -47,21 +58,31 @@
 </div>
 
 <img id="card" alt="Fruit Chop score card" style="display:none">
+<p class="note" id="cardcap" style="display:none">Press and hold the card to
+save it to your photos.</p>
 <canvas id="draw" width="1200" height="630"></canvas>
 
 <div id="actions" style="display:none">
-  <button id="share" class="primary" style="display:none">Share…</button>
+  <button id="share" class="primary" style="display:none">Share the card…</button>
+  <p class="note warn" id="degraded" style="display:none"><b id="why"></b>
+  Press and hold the card above to save the image, then attach it yourself.</p>
   <a id="save" class="btn" download="fruit-chop-score.png">Save image</a>
-  <h2>Post it</h2>
+
+  <h2>Or post the score as text</h2>
   <div class="row">
     <a class="btn" id="x" target="_blank" rel="noopener">X</a>
     <a class="btn" id="wa" target="_blank" rel="noopener">WhatsApp</a>
     <a class="btn" id="th" target="_blank" rel="noopener">Threads</a>
   </div>
   <button id="copy" class="quiet">Copy text</button>
-  <p class="note" id="hint">On some phones the buttons above are blocked inside
-  this window — press and hold the card to save it, then attach it wherever you
-  like.</p>
+  <p class="note">These carry your score and the app link only — a link like
+  this cannot take an attachment. For the card, use <b>Share the card</b> or save
+  it and attach it in the app you are posting from.</p>
+
+  <details id="diag">
+    <summary>Sharing trouble?</summary>
+    <p class="note" id="caps"></p>
+  </details>
 </div>
 
 <button id="done" class="quiet" style="margin-top:24px">Done</button>
@@ -90,6 +111,7 @@
   } else {
     document.getElementById('actions').style.display = 'block';
     document.getElementById('card').style.display = 'block';
+    document.getElementById('cardcap').style.display = 'block';
     document.getElementById('sub').innerHTML = ago(ts);
   }
   if (isNaN(best) || best < score) { best = score; }
@@ -195,7 +217,25 @@
     drawCard();
     dataUrl = cv.toDataURL('image/png');
     document.getElementById('card').src = dataUrl;
-    document.getElementById('save').href = dataUrl;
+  }
+
+  // WKWebView blocks top-level navigation to a data: URL, so a download link is
+  // a dead button on iOS however well the attribute is supported. There the
+  // long-press menu is the real save path, and the button points at it instead.
+  var isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
+              (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var saveEl = document.getElementById('save');
+  if (hasRun && !isIOS) {
+    saveEl.href = dataUrl;
+  } else if (hasRun) {
+    saveEl.removeAttribute('href');
+    saveEl.removeAttribute('download');
+    saveEl.onclick = function () {
+      var cap = document.getElementById('cardcap');
+      cap.innerHTML = 'Press and hold the card, then choose <b>Save to Photos</b>.';
+      cap.className = 'note warn';
+      document.getElementById('card').scrollIntoView();
+    };
   }
 
   // ---- sharing -----------------------------------------------------------
@@ -222,27 +262,73 @@
     return new Blob([bytes], { type: 'image/png' });
   }
 
-  var shareBtn = document.getElementById('share');
-  if (hasRun && navigator.share) {
-    var file = null;
+  var file = null;
+  if (hasRun) {
     try {
       file = new File([dataUrlToBlob(dataUrl)], 'fruit-chop-score.png',
                       { type: 'image/png' });
     } catch (e) { file = null; }
+  }
 
-    var withFile = !!(file && navigator.canShare &&
-                      navigator.canShare({ files: [file] }));
+  // Optimistic rather than strict: a webview can carry files perfectly well and
+  // still not implement `canShare`, and refusing to try in that case is what
+  // silently drops the image. Absent canShare we attempt the file share and let
+  // the rejection tell us, which is the only honest test.
+  var canFiles = !!file && (!navigator.canShare ||
+                            navigator.canShare({ files: [file] }));
+  var textOnly = false;   // set once the file rung has actually been refused
+
+  function degrade(why) {
+    textOnly = true;
+    canFiles = false;
+    document.getElementById('degraded').style.display = 'block';
+    document.getElementById('why').innerHTML = why;
+  }
+
+  var shareBtn = document.getElementById('share');
+  if (hasRun && navigator.share) {
     shareBtn.style.display = 'block';
     shareBtn.onclick = function () {
-      var payload = withFile
-        ? { files: [file], text: text, url: STORE_URL }
+      // The link goes in `text`, never in `url`, whenever a file is attached:
+      // given both, a good many share targets keep the link and drop the image.
+      var payload = (canFiles && !textOnly)
+        ? { files: [file], text: full }
         : { text: text, url: STORE_URL };
-      var p = navigator.share(payload);
-      if (p && p['catch']) { p['catch'](function () {}); }
+
+      var p;
+      try {
+        p = navigator.share(payload);
+      } catch (e) {
+        degrade('Your phone refused the share sheet.');
+        return;
+      }
+      if (p && p['catch']) {
+        p['catch'](function (err) {
+          // A cancelled sheet is not a failure -- only a refusal is. Retrying
+          // here would fail anyway: the tap that authorised this share is spent,
+          // so the fallback is offered for the next tap instead.
+          if (err && err.name === 'AbortError') { return; }
+          if (canFiles) {
+            degrade('Your phone would not attach the image to a share.');
+          }
+        });
+      }
     };
-    if (withFile) {
-      document.getElementById('hint').style.display = 'none';
-    }
+  } else if (hasRun) {
+    document.getElementById('degraded').style.display = 'block';
+    document.getElementById('why').innerHTML =
+      'This window has no share sheet.';
+  }
+
+  // Capabilities, for when the share sheet does something unexpected. The
+  // Pebble app's webview is not a browser and differs by phone, so the only way
+  // to tell which rung was taken is to ask the page.
+  if (hasRun) {
+    document.getElementById('caps').innerHTML =
+      'share sheet: ' + (navigator.share ? 'yes' : 'no') +
+      ' · canShare: ' + (navigator.canShare ? 'yes' : 'absent') +
+      ' · image built: ' + (file ? 'yes' : 'no') +
+      ' · image shareable: ' + (canFiles ? 'yes' : 'no');
   }
 
   document.getElementById('copy').onclick = function () {
