@@ -14,9 +14,9 @@
   }
   h1 { font-size: 20px; margin: 0 0 4px; }
   .sub { color: #9b9ba3; font-size: 14px; margin: 0 0 18px; }
-  /* The long-press "Save to Photos" menu is the one save path that works in
-     every webview, so the callout must not be suppressed. */
-  #card { width: 100%; border-radius: 14px; display: block; margin-bottom: 8px;
+  /* The long-press "Save to Photos" menu is the only way to keep the card if
+     the share sheet will not take it, so the callout must not be suppressed. */
+  #card { width: 100%; border-radius: 14px; display: block; margin-bottom: 16px;
           -webkit-touch-callout: default; }
   canvas { display: none; }
   button, a.btn {
@@ -26,20 +26,11 @@
     background: #24242b; color: #fff; cursor: pointer; -webkit-appearance: none;
   }
   button.primary { background: #e2483d; }
-  .row { display: flex; gap: 10px; }
-  .row a.btn, .row button { flex: 1; }
-  h2 { font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
-       color: #7c7c86; margin: 22px 0 10px; }
   .quiet { background: none; border: 1px solid #33333c; color: #b9b9c2; }
   .note { color: #7c7c86; font-size: 13px; line-height: 1.5; margin: 14px 0 0; }
-  .note b { color: #b9b9c2; }
   .warn { background: #2a1d16; border-radius: 10px; padding: 12px 14px;
           margin: 0 0 12px; color: #d9b48a; }
   .warn b { color: #f0c48a; }
-  #cardcap { margin: 0 0 16px; text-align: center; }
-  #diag { margin-top: 22px; }
-  #diag summary { color: #7c7c86; font-size: 13px; cursor: pointer; }
-  #caps { word-break: break-word; }
   .empty { background: #17171c; border-radius: 14px; padding: 22px 18px;
            margin-bottom: 16px; }
   .empty p { margin: 0; color: #b9b9c2; font-size: 15px; line-height: 1.5; }
@@ -58,31 +49,14 @@
 </div>
 
 <img id="card" alt="Fruit Chop score card" style="display:none">
-<p class="note" id="cardcap" style="display:none">Press and hold the card to
-save it to your photos.</p>
 <canvas id="draw" width="1200" height="630"></canvas>
 
 <div id="actions" style="display:none">
-  <button id="share" class="primary" style="display:none">Share the card…</button>
+  <button id="share" class="primary" style="display:none">Share your score</button>
+  <!-- Only ever shown when the share sheet is missing or refuses: with the
+       button gone there would otherwise be no way out of the page. -->
   <p class="note warn" id="degraded" style="display:none"><b id="why"></b>
-  Press and hold the card above to save the image, then attach it yourself.</p>
-  <a id="save" class="btn" download="fruit-chop-score.png">Save image</a>
-
-  <h2>Or post the score as text</h2>
-  <div class="row">
-    <a class="btn" id="x" target="_blank" rel="noopener">X</a>
-    <a class="btn" id="wa" target="_blank" rel="noopener">WhatsApp</a>
-    <a class="btn" id="th" target="_blank" rel="noopener">Threads</a>
-  </div>
-  <button id="copy" class="quiet">Copy text</button>
-  <p class="note">These carry your score and the app link only — a link like
-  this cannot take an attachment. For the card, use <b>Share the card</b> or save
-  it and attach it in the app you are posting from.</p>
-
-  <details id="diag">
-    <summary>Sharing trouble?</summary>
-    <p class="note" id="caps"></p>
-  </details>
+  Press and hold the card above to save it, then post it yourself.</p>
 </div>
 
 <button id="done" class="quiet" style="margin-top:24px">Done</button>
@@ -111,7 +85,6 @@ save it to your photos.</p>
   } else {
     document.getElementById('actions').style.display = 'block';
     document.getElementById('card').style.display = 'block';
-    document.getElementById('cardcap').style.display = 'block';
     document.getElementById('sub').innerHTML = ago(ts);
   }
   if (isNaN(best) || best < score) { best = score; }
@@ -219,41 +192,15 @@ save it to your photos.</p>
     document.getElementById('card').src = dataUrl;
   }
 
-  // WKWebView blocks top-level navigation to a data: URL, so a download link is
-  // a dead button on iOS however well the attribute is supported. There the
-  // long-press menu is the real save path, and the button points at it instead.
-  var isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
-              (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  var saveEl = document.getElementById('save');
-  if (hasRun && !isIOS) {
-    saveEl.href = dataUrl;
-  } else if (hasRun) {
-    saveEl.removeAttribute('href');
-    saveEl.removeAttribute('download');
-    saveEl.onclick = function () {
-      var cap = document.getElementById('cardcap');
-      cap.innerHTML = 'Press and hold the card, then choose <b>Save to Photos</b>.';
-      cap.className = 'note warn';
-      document.getElementById('card').scrollIntoView();
-    };
-  }
-
   // ---- sharing -----------------------------------------------------------
-  var text = 'Scored ' + score + ' on Fruit Chop (' + diff + ') on my Pebble.';
-  var full = text + ' ' + STORE_URL;
+  // One message, carrying the link itself rather than a separate `url` field:
+  // given both, a good many share targets keep the link and drop the image.
+  var message = 'I scored ' + score + ' on Fruit Chop on my Pebble watch, ' +
+                'download the game from ' + STORE_URL;
 
-  document.getElementById('x').href =
-    'https://x.com/intent/post?text=' + encodeURIComponent(text) +
-    '&url=' + encodeURIComponent(STORE_URL);
-  document.getElementById('wa').href =
-    'https://wa.me/?text=' + encodeURIComponent(full);
-  document.getElementById('th').href =
-    'https://www.threads.net/intent/post?text=' + encodeURIComponent(full);
-
-  // Feature-detected in order: the OS share sheet with the image, the share
-  // sheet with text alone, and failing both the links above plus a long-press
-  // on the card. Each rung is a real fallback -- the webview this page opens in
-  // is not a full browser, and which rung it reaches varies by phone.
+  // The sheet is offered with the card attached, and falls back to the message
+  // alone. The webview this page opens in is not a full browser, and what it
+  // supports varies by phone, so neither rung can be assumed.
   function dataUrlToBlob(url) {
     var parts = url.split(',');
     var bin = atob(parts[1]);
@@ -289,11 +236,9 @@ save it to your photos.</p>
   if (hasRun && navigator.share) {
     shareBtn.style.display = 'block';
     shareBtn.onclick = function () {
-      // The link goes in `text`, never in `url`, whenever a file is attached:
-      // given both, a good many share targets keep the link and drop the image.
       var payload = (canFiles && !textOnly)
-        ? { files: [file], text: full }
-        : { text: text, url: STORE_URL };
+        ? { files: [file], text: message }
+        : { text: message };
 
       var p;
       try {
@@ -319,37 +264,6 @@ save it to your photos.</p>
     document.getElementById('why').innerHTML =
       'This window has no share sheet.';
   }
-
-  // Capabilities, for when the share sheet does something unexpected. The
-  // Pebble app's webview is not a browser and differs by phone, so the only way
-  // to tell which rung was taken is to ask the page.
-  if (hasRun) {
-    document.getElementById('caps').innerHTML =
-      'share sheet: ' + (navigator.share ? 'yes' : 'no') +
-      ' · canShare: ' + (navigator.canShare ? 'yes' : 'absent') +
-      ' · image built: ' + (file ? 'yes' : 'no') +
-      ' · image shareable: ' + (canFiles ? 'yes' : 'no');
-  }
-
-  document.getElementById('copy').onclick = function () {
-    var btn = this;
-    function done() { btn.innerHTML = 'Copied'; }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(full).then(done, fallback);
-    } else {
-      fallback();
-    }
-    function fallback() {
-      var ta = document.createElement('textarea');
-      ta.value = full;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand('copy'); done(); } catch (e) { /* nothing */ }
-      document.body.removeChild(ta);
-    }
-  };
 
   // Hands control back to the Pebble app the same way a settings page would.
   document.getElementById('done').onclick = function () {

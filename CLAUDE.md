@@ -77,8 +77,8 @@ carrying `SCORE`, `DIFF`, `BEST`.
 `src/pkjs/index.js` stores that in `localStorage` and does nothing else until
 `showConfiguration` fires, when it opens the GitHub Pages card with the run in
 the query string. `docs/index.html` redraws the score as a 1200x630 `<canvas>`
-and offers the share sheet, a saveable PNG, prefilled network links and a copy
-button, in that order of preference.
+and hands it to the OS share sheet. Deliberately one card and one button: the
+page is not a settings screen and should not grow into one.
 
 Things that are easy to get wrong here:
 
@@ -98,27 +98,23 @@ Things that are easy to get wrong here:
   need a look after touching that panel; the round one is the tight fit.
 - The share page is ES5 with no build step, same as the sibling repos' settings
   pages, and **GitHub Pages must be enabled on this repo (`main`, `/docs`)** or
-  the gear opens a 404. Which rung of the share chain the Pebble app's webview
-  actually reaches varies by phone, so every rung has to work on its own.
-- **Only the share sheet can carry the image.** The X / WhatsApp / Threads
-  buttons are intent URLs, and a URL cannot take an attachment on any phone —
-  they post the score and the store link as text and nothing else. This reads as
-  a bug the moment the buttons sit next to a picture, so the page names the
-  limit in the copy and keeps `navigator.share` as the primary action. Do not
-  add a network button and imply it takes the card.
+  the gear opens a 404.
+- **`navigator.share` is the only thing that can send the picture,** which is
+  why it is the only button. Two shortcuts were tried and removed: per-network
+  buttons (`x.com/intent/post` and friends) are intent URLs and a URL cannot
+  carry an attachment on any phone, so they posted text and read as a bug next
+  to a card; and `<a download>` is dead on iOS, where WKWebView blocks top-level
+  navigation to a `data:` URL. Do not put either back. The long-press menu is
+  the remaining way to keep the image, which is why `-webkit-touch-callout` must
+  stay `default` on the card and why the failure message points at it.
 - **`navigator.canShare` may be absent where files still work,** so the page
   attempts the file share whenever one could be built and treats the rejection
   as the answer, rather than refusing up front. A retry inside the `catch` is
   pointless: the tap that authorised the share is spent, so the failure reveals
-  the fallback for the *next* tap instead. `AbortError` is a cancelled sheet,
+  the message for the *next* tap instead. `AbortError` is a cancelled sheet,
   not a refusal.
-- **`<a download>` is a dead button on iOS.** WKWebView blocks top-level
-  navigation to a `data:` URL, so on iPhone the save link is defused and points
-  at the long-press menu instead — which is why `-webkit-touch-callout` must
-  stay `default` on the card.
-- The `<details>` panel at the foot of the page prints which rungs the webview
-  offered. It is the only way to tell from a bug report which path was taken;
-  keep it in.
+- The link is inside the shared `text`, not passed as `url`. Given both, a good
+  many share targets keep the link and drop the image.
 - The score in the card is only as fresh as the last run the phone received. A
   run played out of Bluetooth range never arrives, which is why the page prints
   how old the score is and has a no-score state at all.

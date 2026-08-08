@@ -38,9 +38,9 @@ phone out of range.
 ## Sharing a score
 
 When a run ends the score is handed to the phone, and tapping the settings gear
-next to Fruit Chop in the Pebble app opens a score card you can post or save.
-The card is drawn in the page, not photographed off the watch, and carries the
-app store link so anyone can pick the game up from it. A watchapp cannot open
+next to Fruit Chop in the Pebble app opens a score card and one share button.
+The card is drawn in the page, not photographed off the watch, and goes out with
+the app store link so anyone can pick the game up from it. A watchapp cannot open
 anything on the phone by itself, so the gear is the way in — the game over
 screen says so when a phone is connected.
 
