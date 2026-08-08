@@ -93,9 +93,16 @@ Things that are easy to get wrong here:
 - Sending is best effort and must stay that way — no phone, no JS or a busy
   outbox are all logged and dropped. Nothing in `share.c` may block or retry:
   it is called from the frame timer.
-- The hint line is drawn only when `connection_service_peek_pebble_app_connection()`
-  is true, and the game-over backing plate grows by 16px when it is. Both screens
-  need a look after touching that panel; the round one is the tight fit.
+- The game-over panel leads with the share instruction, because the watch cannot
+  open the settings page itself and that line is the whole discovery path. It is
+  drawn only when `connection_service_peek_pebble_app_connection()` is true —
+  with no phone the settings page would open on an empty card. The panel uses the
+  same summed row stack as `draw_title`, so its height and the backing plate both
+  derive from the rows; do not reintroduce a hardcoded plate height. Screenshot
+  both screens after touching it, in all three states (record, non-record, no
+  phone). `pebble emu-bt-connection --connected no` does **not** reproduce the
+  last one — the CLI is still attached as the phone, so the peek stays true;
+  force `can_share = false` in code for that shot.
 - The share page is ES5 with no build step, same as the sibling repos' settings
   pages, and **GitHub Pages must be enabled on this repo (`main`, `/docs`)** or
   the gear opens a 404.

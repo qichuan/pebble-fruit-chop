@@ -611,23 +611,6 @@ static void prv_tri(GContext *ctx, GPoint c, int16_t size, bool up) {
   prv_fill_points(ctx, pts, 3);
 }
 
-// Shared centred-stack layout for the title and game-over screens.
-static void prv_draw_centred(GContext *ctx, GRect bounds, const char *title,
-                             const char *line2, const char *line3) {
-  GFont big = fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD);
-  GFont small = fonts_get_system_font(FONT_KEY_GOTHIC_18);
-
-  graphics_context_set_text_color(ctx, GColorWhite);
-  const int16_t y = bounds.size.h / 2 - 46;
-
-  graphics_draw_text(ctx, title, big, GRect(0, y, bounds.size.w, 34),
-                     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
-  graphics_draw_text(ctx, line2, small, GRect(0, y + 40, bounds.size.w, 24),
-                     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
-  graphics_draw_text(ctx, line3, small, GRect(0, y + 66, bounds.size.w, 24),
-                     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
-}
-
 void draw_title(GContext *ctx, GRect bounds, bool touch_ok) {
   // A row of fruit above the title, as a preview of what the game looks like:
   // one of each silhouette rather than the first four of the enum.
@@ -703,11 +686,55 @@ void draw_title(GContext *ctx, GRect bounds, bool touch_ok) {
 }
 
 void draw_gameover(GContext *ctx, GRect bounds) {
+  GFont big = fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD);
+  GFont bold = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+  GFont small = fonts_get_system_font(FONT_KEY_GOTHIC_18);
+  GFont tiny = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+
+  // The share block only earns its space when there is a phone to share from:
+  // the score is handed over by AppMessage as the run ends, and with nothing on
+  // the other end the settings page would open on an empty card.
+  const bool can_share = connection_service_peek_pebble_app_connection();
+
+  // Same summed stack as the title screen: name every row, add them up, and
+  // start wherever that total centres. The backing plate is sized from the sum
+  // rather than a hardcoded height, so a row can be added or resized without
+  // re-deriving the panel for each screen.
+  const int16_t row_title = 36;
+  const int16_t row_stats = 24;
+  const int16_t row_gap = 8;
+  const int16_t row_share_head = 22;
+  const int16_t row_share_1 = 16;
+  const int16_t row_share_2 = 18;
+  const int16_t row_retry = 18;
+  const int16_t share_h =
+      can_share ? (row_gap + row_share_head + row_share_1 + row_share_2) : 0;
+  const int16_t stack_h = row_title + row_stats + share_h + row_retry;
+
+  const int16_t pad = 10;
+  int16_t y = (bounds.size.h - stack_h) / 2;
+
+  // The field stays visible behind the panel so the fatal moment is legible,
+  // but at the current fruit size a watermelon fills most of the screen and the
+  // text was disappearing into it. A solid backing plate keeps both readable.
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, GRect(0, y - pad, bounds.size.w, stack_h + pad * 2),
+                     6, GCornersAll);
+
+  graphics_context_set_text_color(ctx, GColorWhite);
+  graphics_draw_text(ctx, "GAME OVER", big, GRect(0, y, bounds.size.w, row_title),
+                     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+  y += row_title;
+
+  // Score and best share a row as two cells aligned inwards, rather than one
+  // concatenated string: the gutter is then guaranteed, neither half can push
+  // the other off the 200px screen, and the glyphs cluster around the middle,
+  // which is what the round screen wants.
   char score[24];
   snprintf(score, sizeof(score), "Score %d", game_get_score());
 
   // Calling out a new record is the payoff for keeping one, so it takes the
-  // line that would otherwise just repeat the stored best.
+  // cell that would otherwise just repeat the stored best.
   char best[24];
   const bool is_record = (game_get_score() >= game_get_high_score() &&
                           game_get_score() > 0);
@@ -717,32 +744,40 @@ void draw_gameover(GContext *ctx, GRect bounds) {
     snprintf(best, sizeof(best), "Best %d", game_get_high_score());
   }
 
-  // The field stays visible behind the panel so the fatal moment is legible,
-  // but at the current fruit size a watermelon fills most of the screen and the
-  // text was disappearing into it. A solid backing plate keeps both readable.
-  // The share hint only earns its line when there is a phone to share from: the
-  // score is handed over by AppMessage as the run ends, and with nothing on the
-  // other end the settings page would open on an empty card.
-  const bool can_share = connection_service_peek_pebble_app_connection();
-
-  graphics_context_set_fill_color(ctx, GColorBlack);
-  graphics_fill_rect(ctx, GRect(0, bounds.size.h / 2 - 52, bounds.size.w,
-                                can_share ? 140 : 124),
-                     6, GCornersAll);
-
-  prv_draw_centred(ctx, bounds, "GAME OVER", score, best);
-
-  GFont small = fonts_get_system_font(FONT_KEY_GOTHIC_18);
-  graphics_context_set_text_color(ctx, GColorWhite);
-  graphics_draw_text(ctx, "SELECT to retry", small,
-                     GRect(0, bounds.size.h / 2 + 46, bounds.size.w, 24),
-                     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+  const int16_t half = bounds.size.w / 2;
+  graphics_draw_text(ctx, score, small, GRect(0, y, half - 4, row_stats),
+                     GTextOverflowModeTrailingEllipsis, GTextAlignmentRight, NULL);
+  graphics_draw_text(ctx, best, small, GRect(half + 4, y, half - 4, row_stats),
+                     GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+  y += row_stats;
 
   if (can_share) {
-    graphics_context_set_text_color(ctx, GColorLightGray);
-    graphics_draw_text(ctx, "Share: Pebble app > gear",
-                       fonts_get_system_font(FONT_KEY_GOTHIC_14),
-                       GRect(0, bounds.size.h / 2 + 68, bounds.size.w, 18),
+    y += row_gap;
+    // Yellow because that is already what the title screen uses for the thing
+    // you are meant to act on. The watch cannot open the settings page itself,
+    // so this line is the whole discovery path for sharing.
+    graphics_context_set_text_color(ctx, GColorYellow);
+    graphics_draw_text(ctx, "SHARE YOUR SCORE", bold,
+                       GRect(0, y, bounds.size.w, row_share_head),
                        GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+    y += row_share_head;
+
+    graphics_context_set_text_color(ctx, GColorWhite);
+    graphics_draw_text(ctx, "through the Pebble", tiny,
+                       GRect(0, y, bounds.size.w, row_share_1),
+                       GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+    y += row_share_1;
+    graphics_draw_text(ctx, "watchapp settings page", tiny,
+                       GRect(0, y, bounds.size.w, row_share_2),
+                       GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+    y += row_share_2;
   }
+
+  // Quietest line on the panel: it is the one instruction the player already
+  // knows by the time they are reading this. Grey rather than dark grey -- dark
+  // grey on black tests fine on a screenshot and is unreadable on a real watch.
+  graphics_context_set_text_color(ctx, GColorLightGray);
+  graphics_draw_text(ctx, "SELECT to retry", tiny,
+                     GRect(0, y, bounds.size.w, row_retry),
+                     GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 }
